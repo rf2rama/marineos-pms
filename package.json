@@ -1,12 +1,16 @@
 {
-  "name": "marineos-pms",
+  "name": "marineos-monorepo",
   "private": true,
   "version": "0.1.0",
-  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
   "scripts": {
-    "dev": "vite --host 0.0.0.0",
-    "build": "tsc && vite build",
-    "preview": "vite preview"
+    "dev:management": "npm run dev --workspace=@marineos/management",
+    "dev:crew": "npm run dev --workspace=@marineos/crew",
+    "dev": "npm run dev --workspace=@marineos/management",
+    "build": "npm run build --workspaces"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.8",
@@ -14,8 +18,10 @@
     "lucide-react": "^0.378.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-router-dom": "^6.23.1",
     "recharts": "^2.12.7",
-    "tailwind-merge": "^2.3.0"
+    "tailwind-merge": "^2.3.0",
+    "zustand": "^4.5.2"
   },
   "devDependencies": {
     "@types/node": "^20.12.12",

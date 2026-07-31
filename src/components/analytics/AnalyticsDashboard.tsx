@@ -4,17 +4,22 @@ import { BarChart3, TrendingUp, ShieldCheck, DollarSign, Download, Ship, Award, 
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from 'recharts';
 
 export const AnalyticsDashboard: React.FC = () => {
-  const { vessels, equipment, jobs, requisitions, workOrders, crewMembers, incidents, drills } = useApp();
+  const { selectedVessel, vessels, equipment, jobs, requisitions, workOrders, crewMembers, incidents, drills } = useApp();
 
-  const fleetComparisonData = vessels.map(vessel => {
+  const isAllVessels = selectedVessel.id === 'all_vessels';
+  const targetVesselId = isAllVessels ? undefined : selectedVessel.id;
+
+  const targetVessels = targetVesselId ? vessels.filter(v => v.id === targetVesselId) : vessels;
+
+  const fleetComparisonData = targetVessels.map(vessel => {
     const vesselJobs = jobs.filter(j => j.vesselId === vessel.id);
     const overdueCount = vesselJobs.filter(j => j.status === 'Overdue').length;
     const completedCount = vesselJobs.filter(j => j.status === 'Completed').length;
     const totalJobs = vesselJobs.length || 1;
     const complianceRate = Math.round(((totalJobs - overdueCount) / totalJobs) * 100);
 
-    const vesselReqsCost = requisitions.filter(r => r.vesselId === vessel.id).reduce((acc, c) => acc + c.totalCostUSD, 0);
-    const vesselDrydockCost = workOrders.filter(w => w.vesselId === vessel.id).reduce((acc, c) => acc + (c.actualCostUSD || c.contractorQuoteUSD || 0), 0);
+    const vesselReqsCost = requisitions.filter(r => r.vesselId === vessel.id).reduce((acc, c) => acc + c.totalCostIDR, 0);
+    const vesselDrydockCost = workOrders.filter(w => w.vesselId === vessel.id).reduce((acc, c) => acc + (c.actualCostIDR || c.contractorQuoteIDR || 0), 0);
 
     const vesselCrew = crewMembers.filter(c => c.currentVesselId === vessel.id);
     const vesselIncidents = incidents.filter(i => i.vesselId === vessel.id).length;
@@ -25,8 +30,8 @@ export const AnalyticsDashboard: React.FC = () => {
       complianceRate,
       overdueCount,
       totalRunningHours: vessel.totalRunningHours,
-      procurementSpendUSD: vesselReqsCost,
-      drydockSpendUSD: vesselDrydockCost,
+      procurementSpendIDR: vesselReqsCost,
+      drydockSpendIDR: vesselDrydockCost,
       crewCount: vesselCrew.length,
       incidentsCount: vesselIncidents,
       drillsCount: vesselDrills,
@@ -34,8 +39,8 @@ export const AnalyticsDashboard: React.FC = () => {
   });
 
   const handleExportCSV = () => {
-    const headers = ['Vessel Name', 'Class Society', 'Status', 'Compliance Rate (%)', 'Overdue Jobs', 'Crew Onboard', 'Incidents', 'Drills Done', 'Procurement Spend (USD)', 'Drydock Spend (USD)'];
-    const rows = vessels.map(v => {
+    const headers = ['Vessel Name', 'Class Society', 'Status', 'Compliance Rate (%)', 'Overdue Jobs', 'Crew Onboard', 'Incidents', 'Drills Done', 'Procurement Spend (IDR)', 'Drydock Spend (IDR)'];
+    const rows = targetVessels.map(v => {
       const data = fleetComparisonData.find(d => d.name === v.name.replace('MV ', ''));
       return [
         `"${v.name}"`,
@@ -46,8 +51,8 @@ export const AnalyticsDashboard: React.FC = () => {
         data?.crewCount || 0,
         data?.incidentsCount || 0,
         data?.drillsCount || 0,
-        data?.procurementSpendUSD || 0,
-        data?.drydockSpendUSD || 0,
+        data?.procurementSpendIDR || 0,
+        data?.drydockSpendIDR || 0,
       ];
     });
 
@@ -151,7 +156,7 @@ export const AnalyticsDashboard: React.FC = () => {
                       {data?.incidentsCount} events
                     </td>
                     <td className="py-3 px-3 text-sea-accent">{data?.drillsCount} drills</td>
-                    <td className="py-3 px-3">${data?.procurementSpendUSD.toLocaleString()} USD</td>
+                    <td className="py-3 px-3">${data?.procurementSpendIDR.toLocaleString()} IDR</td>
                   </tr>
                 );
               })}

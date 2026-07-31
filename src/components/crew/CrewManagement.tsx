@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { CrewMember, SeafarerMedicalRecord, SeafarerAccidentRecord, SeafarerStatus, SeafarerCertificate } from '../../types';
+import { CrewMember, SeafarerMedicalRecord, SeafarerAccidentRecord, SeafarerStatus, SeafarerCertificate, MLCRestHourLog } from '../../types';
 import { 
   Users, Plus, ShieldCheck, AlertTriangle, Calendar, UserCheck, Award, Filter, Search, 
-  Anchor, ArrowRight, History, CheckCircle2, HeartPulse, ShieldAlert, FileText, Edit3, XCircle, Save, LogOut, RefreshCw, Trash2, Ship 
+  Anchor, ArrowRight, History, CheckCircle2, HeartPulse, ShieldAlert, FileText, Edit3, XCircle, Save, LogOut, RefreshCw, Trash2, Ship, Clock, Scale
 } from 'lucide-react';
 
 export const CrewManagement: React.FC = () => {
@@ -12,16 +12,27 @@ export const CrewManagement: React.FC = () => {
     assignSeafarerToVessel, releaseSeafarerFromVessel, updateCrewStatus,
     addCrewCertificate, updateCrewCertificate, deleteCrewCertificate,
     addCrewMedicalRecord, deleteCrewMedicalRecord, addCrewAccidentRecord, deleteCrewAccidentRecord,
-    deleteAssignmentHistory, updateCrewNotes, activeRole 
+    deleteAssignmentHistory, updateCrewNotes, activeRole, mlcLogs, addMLCRestHourLog, deleteMLCRestHourLog 
   } = useApp();
   
+  const [activeMainTab, setActiveMainTab] = useState<'crew_list' | 'mlc_calculator'>('crew_list');
   const [viewMode, setViewMode] = useState<'onboard' | 'pool' | 'all'>('onboard');
   const [filterRank, setFilterRank] = useState<string>('All');
   const [filterStatus, setFilterStatus] = useState<string>('All');
   const [searchTerm, setSearchTerm] = useState('');
   
   const [selectedSeafarerDetail, setSelectedSeafarerDetail] = useState<CrewMember | null>(null);
-  const [activeModalTab, setActiveModalTab] = useState<'certs' | 'history' | 'medical' | 'accidents' | 'notes'>('history');
+  const [activeModalTab, setActiveModalTab] = useState<'certs' | 'history' | 'medical' | 'accidents' | 'notes'>('certs');
+
+  // MLC Rest Log Modal Form
+  const [isMlcModalOpen, setIsMlcModalOpen] = useState(false);
+  const [mlcFormData, setMlcFormData] = useState({
+    crewId: crewMembers[0]?.id || '',
+    date: new Date().toISOString().split('T')[0],
+    workHours: 10.0,
+    restHours: 14.0,
+    loggedBy: 'Chief Officer D. Rossi',
+  });
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingCrewId, setEditingCrewId] = useState<string | null>(null);
@@ -102,7 +113,10 @@ export const CrewManagement: React.FC = () => {
   const targetVesselId = isAllVessels ? undefined : selectedVessel.id;
 
   const filteredCrew = crewMembers.filter(member => {
-    if (viewMode === 'onboard' && (!targetVesselId || member.currentVesselId !== targetVesselId)) return false;
+    if (viewMode === 'onboard') {
+      if (targetVesselId && member.currentVesselId !== targetVesselId) return false;
+      if (!targetVesselId && member.status !== 'Onboard') return false;
+    }
     if (viewMode === 'pool' && member.status !== 'Available' && member.status !== 'Waiting for Deployment') return false;
 
     const matchesSearch = member.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -242,62 +256,88 @@ export const CrewManagement: React.FC = () => {
         )}
       </div>
 
-      {/* Mode Buttons & Search Bar */}
+      {/* Main Subtabs Navigation: Crew List vs MLC Rest Hours Calculator */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-2 p-1.5 rounded-xl bg-ocean-900 border border-ocean-800 w-fit">
           <button
-            onClick={() => setViewMode('onboard')}
-            className={`px-4 py-2 rounded-lg text-xs font-semibold transition ${
-              viewMode === 'onboard' ? 'bg-sea-accent text-ocean-950 font-bold' : 'text-slate-400 hover:text-white'
+            onClick={() => setActiveMainTab('crew_list')}
+            className={`px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition ${
+              activeMainTab === 'crew_list' ? 'bg-sea-accent text-ocean-950 font-bold' : 'text-slate-400 hover:text-white'
             }`}
           >
-            Onboard Crew
+            <Users className="w-3.5 h-3.5" />
+            <span>Seafarers & STCW Certificates ({crewMembers.length})</span>
           </button>
+
           <button
-            onClick={() => setViewMode('pool')}
-            className={`px-4 py-2 rounded-lg text-xs font-semibold transition ${
-              viewMode === 'pool' ? 'bg-sea-accent text-ocean-950 font-bold' : 'text-slate-400 hover:text-white'
+            onClick={() => setActiveMainTab('mlc_calculator')}
+            className={`px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition ${
+              activeMainTab === 'mlc_calculator' ? 'bg-sea-accent text-ocean-950 font-bold' : 'text-slate-400 hover:text-white'
             }`}
           >
-            Available Pool
-          </button>
-          <button
-            onClick={() => setViewMode('all')}
-            className={`px-4 py-2 rounded-lg text-xs font-semibold transition ${
-              viewMode === 'all' ? 'bg-sea-accent text-ocean-950 font-bold' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            All Fleet Seafarers ({crewMembers.length})
+            <Scale className="w-3.5 h-3.5" />
+            <span>MLC 2006 Work & Rest Hours Logbook ({mlcLogs.length})</span>
           </button>
         </div>
 
-        {/* Filters */}
-        <div className="flex items-center gap-2">
-          <select
-            value={filterRank}
-            onChange={e => setFilterRank(e.target.value)}
-            className="bg-ocean-900 border border-ocean-700 text-xs text-white rounded-xl px-3 py-2 font-mono"
-          >
-            {ranks.map(r => (
-              <option key={r} value={r}>Rank: {r}</option>
-            ))}
-          </select>
+        {activeMainTab === 'crew_list' && (
+          <div className="flex items-center gap-2">
+            <select
+              value={filterRank}
+              onChange={e => setFilterRank(e.target.value)}
+              className="bg-ocean-900 border border-ocean-700 text-xs text-white rounded-xl px-3 py-2 font-mono"
+            >
+              {ranks.map(r => (
+                <option key={r} value={r}>Rank: {r}</option>
+              ))}
+            </select>
 
-          <div className="relative w-full sm:w-56">
-            <Search className="w-4 h-4 absolute left-3.5 top-3 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search seafarer, book no..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-ocean-900 border border-ocean-700 rounded-xl pl-10 pr-4 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-sea-accent/50"
-            />
+            <div className="relative w-full sm:w-56">
+              <Search className="w-4 h-4 absolute left-3.5 top-3 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search seafarer, book no..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full bg-ocean-900 border border-ocean-700 rounded-xl pl-10 pr-4 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-sea-accent/50"
+              />
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
-      {/* Crew Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      {activeMainTab === 'crew_list' && (
+        <div className="space-y-4">
+          {/* Mode Buttons */}
+          <div className="flex items-center gap-2 p-1.5 rounded-xl bg-ocean-900 border border-ocean-800 w-fit">
+            <button
+              onClick={() => setViewMode('onboard')}
+              className={`px-4 py-2 rounded-lg text-xs font-semibold transition ${
+                viewMode === 'onboard' ? 'bg-sea-accent text-ocean-950 font-bold' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Onboard Crew
+            </button>
+            <button
+              onClick={() => setViewMode('pool')}
+              className={`px-4 py-2 rounded-lg text-xs font-semibold transition ${
+                viewMode === 'pool' ? 'bg-sea-accent text-ocean-950 font-bold' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Available Pool
+            </button>
+            <button
+              onClick={() => setViewMode('all')}
+              className={`px-4 py-2 rounded-lg text-xs font-semibold transition ${
+                viewMode === 'all' ? 'bg-sea-accent text-ocean-950 font-bold' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              All Fleet Seafarers ({crewMembers.length})
+            </button>
+          </div>
+
+          {/* Crew Cards Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredCrew.map(crew => {
           const accidentCount = crew.accidentRecords ? crew.accidentRecords.length : 0;
           return (
@@ -338,84 +378,185 @@ export const CrewManagement: React.FC = () => {
                     </span>
                   )}
                 </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-ocean-800 text-sea-accent border border-ocean-700 uppercase">
+                        {crew.rank}
+                      </span>
 
-                {crew.status === 'Onboard' ? (
-                  <div className="p-3 rounded-xl bg-ocean-950/80 border border-ocean-850 space-y-1 font-mono text-xs">
-                    <span className="text-sea-emerald font-bold block">Assigned Vessel: {crew.currentVesselName}</span>
-                    <div className="flex items-center justify-between text-[11px] text-slate-400">
-                      <span>Signed On: {crew.signOnDate}</span>
-                      <span>Planned Off: {crew.signOffDatePlanned}</span>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+                        crew.status === 'Onboard' ? 'bg-sea-emerald/20 text-sea-emerald' : 'bg-sea-amber/20 text-sea-amber'
+                      }`}>
+                        {crew.status}
+                      </span>
                     </div>
-                  </div>
-                ) : (
-                  <div className="p-3 rounded-xl bg-ocean-950/80 border border-ocean-850 font-mono text-xs">
-                    {crew.assignmentHistory && crew.assignmentHistory.length > 0 ? (
-                      <p className="text-[11px] text-slate-400">
-                        Last Ship: <strong className="text-white">{crew.assignmentHistory[0].vesselName}</strong> • Signed Off: <strong className="text-sea-amber">{crew.assignmentHistory[0].signOffDate}</strong>
-                      </p>
-                    ) : (
-                      <p className="text-[11px] text-slate-500 italic">No previous vessel assignments recorded.</p>
-                    )}
-                  </div>
-                )}
-              </div>
 
-              <div className="pt-3 border-t border-ocean-800 flex items-center justify-between">
-                <button
-                  onClick={() => {
-                    setSelectedSeafarerDetail(crew);
-                    setNotesInput(crew.personalNotes || '');
-                  }}
-                  className="text-xs text-sea-accent font-semibold hover:underline flex items-center gap-1"
-                >
-                  <span>View Full Profile & History</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </button>
+                    <h3 className="text-base font-bold text-white tracking-tight flex items-center justify-between">
+                      <span>{crew.fullName}</span>
+                      <span className="text-xs text-slate-400 font-mono font-normal">({crew.nationality})</span>
+                    </h3>
+                    <p className="text-xs text-slate-400 font-mono">Seaman Book: {crew.seamanBookNo}</p>
 
-                {activeRole !== 'owner' && (
-                  <div className="flex items-center gap-2">
                     {crew.status === 'Onboard' ? (
-                      <button
-                        onClick={() => setReleaseModalCrewId(crew.id)}
-                        className="px-2.5 py-1 rounded-lg bg-sea-amber/20 hover:bg-sea-amber/30 text-sea-amber text-xs font-bold transition"
-                      >
-                        Sign Off
-                      </button>
+                      <div className="p-3 rounded-xl bg-ocean-950/80 border border-ocean-850 font-mono text-xs space-y-1">
+                        <div className="flex items-center justify-between text-sea-accent font-bold">
+                          <span className="flex items-center gap-1"><Ship className="w-3.5 h-3.5" /> {crew.currentVesselName}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-[11px] text-slate-400">
+                          <span>Signed On: {crew.signOnDate}</span>
+                          <span>Planned Off: {crew.signOffDatePlanned}</span>
+                        </div>
+                      </div>
                     ) : (
-                      <button
-                        onClick={() => setAssignModalCrewId(crew.id)}
-                        className="px-2.5 py-1 rounded-lg bg-sea-emerald/20 hover:bg-sea-emerald/30 text-sea-emerald text-xs font-bold transition"
-                      >
-                        Assign
-                      </button>
+                      <div className="p-3 rounded-xl bg-ocean-950/80 border border-ocean-850 font-mono text-xs">
+                        {crew.assignmentHistory && crew.assignmentHistory.length > 0 ? (
+                          <p className="text-[11px] text-slate-400">
+                            Last Ship: <strong className="text-white">{crew.assignmentHistory[0].vesselName}</strong> • Signed Off: <strong className="text-sea-amber">{crew.assignmentHistory[0].signOffDate}</strong>
+                          </p>
+                        ) : (
+                          <p className="text-[11px] text-slate-500 italic">No previous vessel assignments recorded.</p>
+                        )}
+                      </div>
                     )}
+                  </div>
 
-                    <button
-                      onClick={() => openEditModal(crew)}
-                      className="p-1.5 rounded-xl bg-ocean-800 hover:bg-ocean-750 text-sea-accent border border-ocean-700 text-xs transition"
-                      title="Edit Seafarer Profile"
-                    >
-                      <Edit3 className="w-3.5 h-3.5" />
-                    </button>
-
+                  <div className="pt-3 border-t border-ocean-800 flex items-center justify-between">
                     <button
                       onClick={() => {
-                        if (confirm(`Delete seafarer "${crew.fullName}" from registry?`)) {
-                          deleteCrewMember(crew.id);
-                        }
+                        setSelectedSeafarerDetail(crew);
+                        setNotesInput(crew.personalNotes || '');
                       }}
-                      className="p-1.5 rounded-xl bg-sea-rose/10 hover:bg-sea-rose/20 text-sea-rose border border-sea-rose/30 text-xs transition"
-                      title="Delete Seafarer"
+                      className="text-xs text-sea-accent font-semibold hover:underline flex items-center gap-1"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>View Full Profile & History</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
                     </button>
+
+                    {activeRole !== 'owner' && (
+                      <div className="flex items-center gap-2">
+                        {crew.status === 'Onboard' ? (
+                          <button
+                            onClick={() => setReleaseModalCrewId(crew.id)}
+                            className="px-2.5 py-1 rounded-lg bg-sea-amber/20 hover:bg-sea-amber/30 text-sea-amber text-xs font-bold transition"
+                          >
+                            Sign Off
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => setAssignModalCrewId(crew.id)}
+                            className="px-2.5 py-1 rounded-lg bg-sea-emerald/20 hover:bg-sea-emerald/30 text-sea-emerald text-xs font-bold transition"
+                          >
+                            Assign
+                          </button>
+                        )}
+
+                        <button
+                          onClick={() => openEditModal(crew)}
+                          className="p-1.5 rounded-xl bg-ocean-800 hover:bg-ocean-750 text-sea-accent border border-ocean-700 text-xs transition"
+                          title="Edit Seafarer Profile"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            if (confirm(`Delete seafarer "${crew.fullName}" from registry?`)) {
+                              deleteCrewMember(crew.id);
+                            }
+                          }}
+                          className="p-1.5 rounded-xl bg-sea-rose/10 hover:bg-sea-rose/20 text-sea-rose border border-sea-rose/30 text-xs transition"
+                          title="Delete Seafarer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {activeMainTab === 'mlc_calculator' && (
+        <div className="space-y-4 font-mono text-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Scale className="w-5 h-5 text-sea-accent" />
+                MLC 2006 / STCW 2010 Seafarer Work & Rest Hours Logbook
+              </h3>
+              <p className="text-slate-400 text-xs font-sans">
+                Monitors mandatory minimum 10 hours rest per 24-hour period and 77 hours rest in any 7-day period to prevent Port State Control (PSC) detentions.
+              </p>
             </div>
-          );
-        })}
-      </div>
+
+            {activeRole !== 'owner' && (
+              <button
+                onClick={() => setIsMlcModalOpen(true)}
+                className="px-4 py-2 rounded-xl bg-sea-accent text-ocean-950 font-bold text-xs hover:bg-sea-accent/90 transition shadow-lg flex items-center gap-2 shrink-0 font-sans"
+              >
+                <Plus className="w-4 h-4" /> Log Seafarer Rest Hours
+              </button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 gap-3">
+            {mlcLogs.length === 0 ? (
+              <div className="glass-panel rounded-2xl p-10 text-center space-y-2 border border-ocean-800">
+                <Scale className="w-10 h-10 text-slate-500 mx-auto" />
+                <h3 className="text-base font-bold text-white font-sans">No MLC Rest Hour Logs Recorded</h3>
+                <p className="text-slate-400 font-sans">Log daily work and rest hours to ensure STCW 2010 compliance.</p>
+              </div>
+            ) : (
+              mlcLogs.map(log => (
+                <div key={log.id} className={`glass-panel rounded-2xl p-4 space-y-3 border transition ${
+                  log.isCompliant ? 'border-ocean-800' : 'border-sea-rose/60 bg-sea-rose/5'
+                }`}>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-3">
+                      <span className="font-bold text-white text-sm">{log.crewName} ({log.rank})</span>
+                      <span className="text-slate-400 text-xs">Date: {log.date}</span>
+                    </div>
+
+                    <span className={`px-2.5 py-0.5 rounded text-[10px] font-bold uppercase ${
+                      log.isCompliant ? 'bg-sea-emerald/20 text-sea-emerald border border-sea-emerald/40' : 'bg-sea-rose/20 text-sea-rose border border-sea-rose/40'
+                    }`}>
+                      {log.isCompliant ? 'STCW COMPLIANT' : 'STCW NON-COMPLIANT VIOLATION'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3 p-3 rounded-xl bg-ocean-950 border border-ocean-850 text-xs">
+                    <div>
+                      <span className="text-slate-400 block text-[10px]">DAILY WORK HOURS:</span>
+                      <strong className="text-white">{log.workHours} hrs</strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block text-[10px]">DAILY REST HOURS:</span>
+                      <strong className={log.restHours >= 10 ? 'text-sea-emerald' : 'text-sea-rose'}>
+                        {log.restHours} hrs (Min 10.0h required)
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block text-[10px]">LOGGED BY OFFICER:</span>
+                      <strong className="text-slate-300">{log.loggedBy}</strong>
+                    </div>
+                  </div>
+
+                  {!log.isCompliant && log.violationRemarks && (
+                    <div className="p-3 rounded-xl bg-sea-rose/10 border border-sea-rose/30 text-sea-rose text-xs space-y-1 font-sans">
+                      <span className="font-bold uppercase flex items-center gap-1">
+                        <AlertTriangle className="w-4 h-4" /> MLC 2006 Non-Conformity Notice
+                      </span>
+                      <p className="text-slate-300">{log.violationRemarks}</p>
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Assign Seafarer Modal */}
       {assignModalCrewId && (
@@ -1111,6 +1252,143 @@ export const CrewManagement: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* MLC 2006 Rest Hour Log Modal Dialog */}
+      {isMlcModalOpen && (
+        <div className="fixed inset-0 z-50 bg-ocean-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="glass-panel w-full max-w-md rounded-2xl p-6 space-y-4 border border-ocean-700 shadow-2xl font-sans">
+            <div className="flex items-center justify-between border-b border-ocean-800 pb-3">
+              <div>
+                <h2 className="text-base font-bold text-white flex items-center gap-2 font-mono">
+                  <Scale className="w-5 h-5 text-sea-accent" />
+                  Log MLC 2006 / STCW Seafarer Rest Hours
+                </h2>
+                <p className="text-xs text-slate-400 font-mono">STCW mandatory minimum: 10 hours rest in any 24-hour period</p>
+              </div>
+              <button onClick={() => setIsMlcModalOpen(false)} className="text-slate-400 hover:text-white">
+                ✕
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const crewObj = crewMembers.find(c => c.id === mlcFormData.crewId) || crewMembers[0];
+                const restHrs = Number(mlcFormData.restHours);
+                const workHrs = Number(mlcFormData.workHours);
+                const isCompliant = restHrs >= 10.0;
+
+                addMLCRestHourLog({
+                  vesselId: selectedVessel.id === 'all_vessels' ? vessels[0].id : selectedVessel.id,
+                  crewId: crewObj.id,
+                  crewName: crewObj.fullName,
+                  rank: crewObj.rank,
+                  date: mlcFormData.date,
+                  workHours: workHrs,
+                  restHours: restHrs,
+                  isCompliant,
+                  violationRemarks: !isCompliant ? `STCW 2010 Non-Conformity: Seafarer rested only ${restHrs}h (<10h minimum required).` : undefined,
+                  loggedBy: mlcFormData.loggedBy,
+                });
+                setIsMlcModalOpen(false);
+              }}
+              className="space-y-3 text-xs font-mono"
+            >
+              <div>
+                <label className="block text-slate-400 mb-1 font-mono">Select Seafarer *</label>
+                <select
+                  value={mlcFormData.crewId}
+                  onChange={e => setMlcFormData({ ...mlcFormData, crewId: e.target.value })}
+                  className="w-full bg-ocean-900 border border-ocean-700 rounded-lg px-3 py-2 text-white font-bold"
+                >
+                  {crewMembers.map(c => (
+                    <option key={c.id} value={c.id}>{c.rank} {c.fullName} ({c.status})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-slate-400 mb-1">Date Logged *</label>
+                <input
+                  type="date"
+                  required
+                  value={mlcFormData.date}
+                  onChange={e => setMlcFormData({ ...mlcFormData, date: e.target.value })}
+                  className="w-full bg-ocean-900 border border-ocean-700 rounded-lg px-3 py-2 text-white font-mono"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 font-mono">
+                <div>
+                  <label className="block text-slate-400 mb-1">Daily Work Hours *</label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    required
+                    value={mlcFormData.workHours}
+                    onChange={e => {
+                      const work = Number(e.target.value);
+                      const rest = Math.max(0, 24 - work);
+                      setMlcFormData({ ...mlcFormData, workHours: work, restHours: rest });
+                    }}
+                    className="w-full bg-ocean-900 border border-ocean-700 rounded-lg px-3 py-2 text-white font-bold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-400 mb-1">Calculated Rest Hours *</label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    required
+                    value={mlcFormData.restHours}
+                    onChange={e => setMlcFormData({ ...mlcFormData, restHours: Number(e.target.value) })}
+                    className={`w-full bg-ocean-900 border rounded-lg px-3 py-2 font-bold ${
+                      mlcFormData.restHours >= 10 ? 'text-sea-emerald border-sea-emerald/40' : 'text-sea-rose border-sea-rose/40'
+                    }`}
+                  />
+                </div>
+              </div>
+
+              {mlcFormData.restHours < 10 && (
+                <div className="p-2.5 rounded-xl bg-sea-rose/20 border border-sea-rose/40 text-sea-rose text-[11px] font-bold flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>WARNING: Rest hours &lt; 10h breaches STCW 2010 / MLC 2006 mandatory rest limit!</span>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-slate-400 mb-1 font-mono">Logged By Officer</label>
+                <input
+                  type="text"
+                  required
+                  value={mlcFormData.loggedBy}
+                  onChange={e => setMlcFormData({ ...mlcFormData, loggedBy: e.target.value })}
+                  className="w-full bg-ocean-900 border border-ocean-700 rounded-lg px-3 py-2 text-white"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-ocean-800 font-sans">
+                <button
+                  type="button"
+                  onClick={() => setIsMlcModalOpen(false)}
+                  className="px-4 py-2 rounded-lg bg-ocean-800 text-slate-300"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-lg bg-sea-accent text-ocean-950 font-bold"
+                >
+                  Save MLC Rest Hour Entry
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+
+export default CrewManagement;

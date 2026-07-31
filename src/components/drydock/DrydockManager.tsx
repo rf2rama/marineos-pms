@@ -21,7 +21,7 @@ export const DrydockManager: React.FC = () => {
     department: 'Hull & Steel' as WorkOrderCard['department'],
     equipmentRef: 'Underwater Outer Shell Plating',
     scopeDescription: '',
-    plannedBudgetUSD: 50000,
+    plannedBudgetIDR: 50000,
     contractorName: 'Damen Shiprepair Rotterdam',
     deadline: '2026-08-15',
     status: 'Draft' as WorkOrderCard['status'],
@@ -33,8 +33,8 @@ export const DrydockManager: React.FC = () => {
     location: 'Rotterdam, Netherlands',
     startDate: '2026-09-01',
     endDate: '2026-09-30',
-    totalPlannedBudgetUSD: 450000,
-    totalActualCostUSD: 410000,
+    totalPlannedBudgetIDR: 450000,
+    totalActualCostIDR: 410000,
     status: 'Planning' as DrydockProject['status'],
   });
 
@@ -56,7 +56,7 @@ export const DrydockManager: React.FC = () => {
       department: 'Hull & Steel',
       equipmentRef: 'Underwater Outer Shell Plating',
       scopeDescription: '',
-      plannedBudgetUSD: 50000,
+      plannedBudgetIDR: 50000,
       contractorName: 'Damen Shiprepair Rotterdam',
       deadline: '2026-08-15',
       status: 'Draft',
@@ -71,7 +71,7 @@ export const DrydockManager: React.FC = () => {
       department: wo.department,
       equipmentRef: wo.equipmentRef,
       scopeDescription: wo.scopeDescription,
-      plannedBudgetUSD: wo.plannedBudgetUSD,
+      plannedBudgetIDR: wo.plannedBudgetIDR,
       contractorName: wo.contractorName || '',
       deadline: wo.deadline,
       status: wo.status,
@@ -87,7 +87,7 @@ export const DrydockManager: React.FC = () => {
         department: formData.department,
         equipmentRef: formData.equipmentRef,
         scopeDescription: formData.scopeDescription,
-        plannedBudgetUSD: Number(formData.plannedBudgetUSD),
+        plannedBudgetIDR: Number(formData.plannedBudgetIDR),
         contractorName: formData.contractorName,
         deadline: formData.deadline,
         status: formData.status,
@@ -100,7 +100,7 @@ export const DrydockManager: React.FC = () => {
         department: formData.department,
         equipmentRef: formData.equipmentRef,
         scopeDescription: formData.scopeDescription,
-        plannedBudgetUSD: Number(formData.plannedBudgetUSD),
+        plannedBudgetIDR: Number(formData.plannedBudgetIDR),
         contractorName: formData.contractorName,
         deadline: formData.deadline,
         status: 'Draft',
@@ -117,8 +117,8 @@ export const DrydockManager: React.FC = () => {
       location: 'Rotterdam, Netherlands',
       startDate: '2026-09-01',
       endDate: '2026-09-30',
-      totalPlannedBudgetUSD: 450000,
-      totalActualCostUSD: 410000,
+      totalPlannedBudgetIDR: 450000,
+      totalActualCostIDR: 410000,
       status: 'Planning',
     });
     setIsProjectModalOpen(true);
@@ -132,8 +132,8 @@ export const DrydockManager: React.FC = () => {
       location: proj.location,
       startDate: proj.startDate,
       endDate: proj.endDate,
-      totalPlannedBudgetUSD: proj.totalPlannedBudgetUSD,
-      totalActualCostUSD: proj.totalActualCostUSD,
+      totalPlannedBudgetIDR: proj.totalPlannedBudgetIDR,
+      totalActualCostIDR: proj.totalActualCostIDR,
       status: proj.status,
     });
     setIsProjectModalOpen(true);
@@ -246,11 +246,11 @@ export const DrydockManager: React.FC = () => {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 font-mono text-xs pt-1">
             <div className="p-3 rounded-xl bg-ocean-900 border border-ocean-850">
               <span className="text-slate-400 block text-[10px]">PLANNED BUDGET</span>
-              <span className="font-bold text-white text-sm">${currentProject.totalPlannedBudgetUSD.toLocaleString()} USD</span>
+              <span className="font-bold text-white text-sm">${(currentProject.totalPlannedBudgetIDR || 0).toLocaleString()} IDR</span>
             </div>
             <div className="p-3 rounded-xl bg-ocean-900 border border-ocean-850">
               <span className="text-slate-400 block text-[10px]">ACTUAL QUOTED COST</span>
-              <span className="font-bold text-sea-accent text-sm">${currentProject.totalActualCostUSD.toLocaleString()} USD</span>
+              <span className="font-bold text-sea-accent text-sm">${(currentProject.totalActualCostIDR || 0).toLocaleString()} IDR</span>
             </div>
             <div className="p-3 rounded-xl bg-ocean-900 border border-ocean-850">
               <span className="text-slate-400 block text-[10px]">TOTAL WORK CARDS</span>
@@ -259,6 +259,44 @@ export const DrydockManager: React.FC = () => {
             <div className="p-3 rounded-xl bg-ocean-900 border border-ocean-850">
               <span className="text-slate-400 block text-[10px]">COMPLETED CARDS</span>
               <span className="font-bold text-sea-amber text-sm">{projectWorkOrders.filter(w => w.status === 'Completed').length} / {projectWorkOrders.length}</span>
+            </div>
+          </div>
+
+          {/* VISUAL YARD GANTT CHART TIMELINE & BUDGET BURN RATE */}
+          <div className="p-4 rounded-xl bg-ocean-950 border border-ocean-850 space-y-3 font-mono text-xs">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-white uppercase text-[11px]">SHIPYARD WORK ORDERS GANTT TIMELINE & BUDGET BURN</span>
+              <span className="text-[10px] text-sea-accent">Tender Deadline: {currentProject.endDate}</span>
+            </div>
+
+            <div className="space-y-2">
+              {projectWorkOrders.map(wo => {
+                const percentDone = wo.status === 'Completed' ? 100 : (wo.status === 'In Progress' ? 65 : (wo.status === 'Inspection Ready' ? 90 : 20));
+                return (
+                  <div key={wo.id} className="space-y-1">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-slate-200 font-bold truncate max-w-[200px]">{wo.title}</span>
+                      <span className="text-slate-400">
+                        {wo.contractorName || 'Yard Contractor'} • <strong className="text-sea-amber">${(wo.contractorQuoteIDR || wo.plannedBudgetIDR || 0).toLocaleString()} IDR</strong>
+                      </span>
+                    </div>
+
+                    <div className="w-full bg-ocean-900 rounded-lg h-3 p-0.5 border border-ocean-800 relative overflow-hidden flex items-center">
+                      <div 
+                        className={`h-full rounded transition-all duration-700 ${
+                          wo.status === 'Completed' ? 'bg-sea-emerald' :
+                          wo.status === 'In Progress' ? 'bg-sea-accent animate-pulse' :
+                          'bg-sea-amber'
+                        }`}
+                        style={{ width: `${percentDone}%` }}
+                      />
+                      <span className="absolute inset-0 flex items-center justify-center text-[9px] font-bold text-white drop-shadow">
+                        {wo.department} — {wo.status} ({percentDone}%)
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -295,7 +333,7 @@ export const DrydockManager: React.FC = () => {
               <div className="p-3 rounded-xl bg-ocean-950/80 border border-ocean-850 space-y-1 font-mono text-xs">
                 <div className="flex items-center justify-between">
                   <span className="text-slate-400">Planned Budget:</span>
-                  <span className="font-bold text-white">${wo.plannedBudgetUSD.toLocaleString()} USD</span>
+                  <span className="font-bold text-white">${(wo.plannedBudgetIDR || 0).toLocaleString()} IDR</span>
                 </div>
                 <div className="flex items-center justify-between text-[11px] text-slate-400">
                   <span>Contractor: {wo.contractorName || 'TBD'}</span>
@@ -409,7 +447,7 @@ export const DrydockManager: React.FC = () => {
                 {projectWorkOrders.map((wo, i) => (
                   <div key={wo.id} className="p-3 bg-slate-50 rounded border border-slate-200 space-y-1">
                     <p className="font-bold text-slate-900">{i + 1}. [{wo.department}] {wo.title}</p>
-                    <p className="text-slate-700">Ref: {wo.equipmentRef} • Budget: ${wo.plannedBudgetUSD.toLocaleString()} USD</p>
+                    <p className="text-slate-700">Ref: {wo.equipmentRef} • Budget: ${(wo.plannedBudgetIDR || 0).toLocaleString()} IDR</p>
                     <p className="text-slate-600 italic">Scope: "{wo.scopeDescription}"</p>
                   </div>
                 ))}
@@ -493,8 +531,8 @@ export const DrydockManager: React.FC = () => {
                   <label className="block text-slate-400 mb-1">Planned Budget ($)</label>
                   <input
                     type="number"
-                    value={formData.plannedBudgetUSD}
-                    onChange={e => setFormData({ ...formData, plannedBudgetUSD: Number(e.target.value) })}
+                    value={formData.plannedBudgetIDR}
+                    onChange={e => setFormData({ ...formData, plannedBudgetIDR: Number(e.target.value) })}
                     className="w-full bg-ocean-900 border border-ocean-700 rounded-lg px-3 py-2 text-white font-mono"
                   />
                 </div>
@@ -590,8 +628,8 @@ export const DrydockManager: React.FC = () => {
                   <label className="block text-slate-400 mb-1">Planned Budget ($)</label>
                   <input
                     type="number"
-                    value={projectFormData.totalPlannedBudgetUSD}
-                    onChange={e => setProjectFormData({ ...projectFormData, totalPlannedBudgetUSD: Number(e.target.value) })}
+                    value={projectFormData.totalPlannedBudgetIDR}
+                    onChange={e => setProjectFormData({ ...projectFormData, totalPlannedBudgetIDR: Number(e.target.value) })}
                     className="w-full bg-ocean-900 border border-ocean-700 rounded-lg px-3 py-2 text-white font-mono"
                   />
                 </div>
@@ -599,8 +637,8 @@ export const DrydockManager: React.FC = () => {
                   <label className="block text-slate-400 mb-1">Actual Quoted ($)</label>
                   <input
                     type="number"
-                    value={projectFormData.totalActualCostUSD}
-                    onChange={e => setProjectFormData({ ...projectFormData, totalActualCostUSD: Number(e.target.value) })}
+                    value={projectFormData.totalActualCostIDR}
+                    onChange={e => setProjectFormData({ ...projectFormData, totalActualCostIDR: Number(e.target.value) })}
                     className="w-full bg-ocean-900 border border-ocean-700 rounded-lg px-3 py-2 text-white font-mono"
                   />
                 </div>

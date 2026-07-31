@@ -3,6 +3,7 @@ import { AppProvider, useApp } from './context/AppContext';
 import { Header } from './components/Header';
 import { Sidebar, ActiveTab } from './components/Sidebar';
 import { Overview } from './components/Overview';
+import { Operations } from './components/operations/Operations';
 import { EquipmentRegistry } from './components/pms/EquipmentRegistry';
 import { MaintenanceSchedules } from './components/pms/MaintenanceSchedules';
 import { DailyParametersLog } from './components/pms/DailyParametersLog';
@@ -34,6 +35,7 @@ const AppContent: React.FC = () => {
 
         <main className="flex-1 p-4 lg:p-8 overflow-y-auto max-w-7xl mx-auto w-full">
           {activeTab === 'overview' && <Overview setActiveTab={setActiveTab} />}
+          {activeTab === 'operations' && <Operations />}
           {activeTab === 'equipment' && <EquipmentRegistry />}
           {activeTab === 'jobs' && <MaintenanceSchedules />}
           {activeTab === 'daily_log' && <DailyParametersLog />}

@@ -18,6 +18,13 @@ export const InventoryProcurement: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [storageFilter, setStorageFilter] = useState<'All' | 'Ship Storage' | 'Land Storage'>('All');
   const [categoryFilter, setCategoryFilter] = useState<'All' | 'Spare Part' | 'Consumable'>('All');
+  const [stockStatusFilter, setStockStatusFilter] = useState<'All' | 'Healthy' | 'Low Stock'>('All');
+
+  // Requisition Filters
+  const [reqFilterStatus, setReqFilterStatus] = useState<string>('All');
+  const [reqFilterVendor, setReqFilterVendor] = useState<string>('All');
+  const [reqFilterUrgency, setReqFilterUrgency] = useState<string>('All');
+  const [reqSortBy, setReqSortBy] = useState<string>('Date (Newest)');
   const [conditionFilter, setConditionFilter] = useState<string>('All');
 
   // Modals
@@ -48,6 +55,11 @@ export const InventoryProcurement: React.FC = () => {
   const [itemEditSupplier, setItemEditSupplier] = useState<string>('');
   const [itemEditStatus, setItemEditStatus] = useState<RequisitionItemStatus>('Requested');
   const [itemEditDenialReason, setItemEditDenialReason] = useState<string>('');
+  const [itemEditComment, setItemEditComment] = useState<string>('');
+  const [itemEditSize, setItemEditSize] = useState<string>('');
+  const [itemEditQty, setItemEditQty] = useState<number>(0);
+  const [itemEditUnit, setItemEditUnit] = useState<string>('');
+  const [itemEditUnitPrice, setItemEditUnitPrice] = useState<number>(0);
 
   // Vendor Form
   const [vendorFormData, setVendorFormData] = useState({
@@ -60,6 +72,10 @@ export const InventoryProcurement: React.FC = () => {
     address: '10 Marine Logistics Way, Singapore',
     status: 'Approved Supplier' as Supplier['status'],
     performanceNotes: 'OEM certified marine technical vendor.',
+    picName: 'Klaus Lindner (Head of Sales)',
+    picPhone: '+49 40 3110 889',
+    picEmail: 'klaus.lindner@man-es.de',
+    areaCoverage: 'Singapore, Rotterdam, Houston, Shanghai',
   });
 
   // Inventory Item Form
@@ -69,7 +85,7 @@ export const InventoryProcurement: React.FC = () => {
     itemCategory: 'Consumable (Oils, Supplies, Chemicals, Logbooks)' as ItemCategory,
     stockQty: 10,
     minStockQty: 3,
-    unitCostUSD: 120,
+    unitCostIDR: 120,
     locationType: 'Land Storage' as StorageLocationType,
     locationName: 'Singapore Central Marine Depot (Bay 4)',
     conditionStatus: 'Good / Ready' as ItemConditionStatus,
@@ -88,7 +104,7 @@ export const InventoryProcurement: React.FC = () => {
         partName: 'Lube Oil Cartridge Filter', 
         partNumber: 'DH-LOF-40911', 
         qtyRequested: 10, 
-        unitPriceUSD: 180, 
+        unitPriceIDR: 180, 
         itemCategory: 'Spare Part (Non-Consumable)' as ItemCategory,
         supplierName: suppliers[0]?.name || 'MAN Energy Solutions Singapore Hub',
         status: 'Requested' as RequisitionItemStatus
@@ -97,7 +113,7 @@ export const InventoryProcurement: React.FC = () => {
         partName: 'System Degreaser Chemical (20L)', 
         partNumber: 'CHEM-DEG-20L', 
         qtyRequested: 5, 
-        unitPriceUSD: 110, 
+        unitPriceIDR: 110, 
         itemCategory: 'Consumable (Oils, Supplies, Chemicals, Logbooks)' as ItemCategory,
         supplierName: suppliers[1]?.name || 'Alfa Laval Marine Rotterdam Central Depot',
         status: 'Requested' as RequisitionItemStatus
@@ -110,7 +126,7 @@ export const InventoryProcurement: React.FC = () => {
     partName: '',
     partNumber: '',
     qtyRequested: 1,
-    unitPriceUSD: 100,
+    unitPriceIDR: 100,
     itemCategory: 'Spare Part (Non-Consumable)',
     supplierName: suppliers[0]?.name || 'MAN Energy Solutions Singapore Hub',
     status: 'Requested',
@@ -119,11 +135,38 @@ export const InventoryProcurement: React.FC = () => {
   const isAllVessels = selectedVessel.id === 'all_vessels';
   const targetVesselId = isAllVessels ? undefined : selectedVessel.id;
 
-  const vesselRequisitions = requisitions.filter(r => 
-    (!targetVesselId || r.vesselId === targetVesselId) &&
-    (r.requisitionNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-     r.items.some(i => i.partName.toLowerCase().includes(searchTerm.toLowerCase()) || (i.supplierName || '').toLowerCase().includes(searchTerm.toLowerCase())))
-  );
+  const vesselRequisitions = requisitions.filter(r => {
+    if (targetVesselId && r.vesselId !== targetVesselId) return false;
+    
+    // Search Term
+    if (searchTerm) {
+      const matchSearch = r.requisitionNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                          r.items.some(i => i.partName.toLowerCase().includes(searchTerm.toLowerCase()) || (i.supplierName || '').toLowerCase().includes(searchTerm.toLowerCase()));
+      if (!matchSearch) return false;
+    }
+
+    // Advanced Filters
+    if (reqFilterStatus !== 'All' && r.overallStatus !== reqFilterStatus) return false;
+    if (reqFilterUrgency === 'Urgent Only' && !r.items.some(i => i.isUrgent)) return false;
+    if (reqFilterVendor !== 'All') {
+      const hasVendor = r.items.some(item => item.supplierName === reqFilterVendor);
+      if (!hasVendor) return false;
+    }
+    return true;
+  }).sort((a, b) => {
+    if (reqSortBy === 'Date (Newest)') return new Date(b.dateRequested).getTime() - new Date(a.dateRequested).getTime();
+    if (reqSortBy === 'Date (Oldest)') return new Date(a.dateRequested).getTime() - new Date(b.dateRequested).getTime();
+    if (reqSortBy === 'Price (Highest)') return (b.totalCostIDR || 0) - (a.totalCostIDR || 0);
+    if (reqSortBy === 'Price (Lowest)') return (a.totalCostIDR || 0) - (b.totalCostIDR || 0);
+    if (reqSortBy === 'Urgency') {
+      const aUrgent = a.items.some(i => i.isUrgent);
+      const bUrgent = b.items.some(i => i.isUrgent);
+      if (aUrgent && !bUrgent) return -1;
+      if (!aUrgent && bUrgent) return 1;
+      return 0;
+    }
+    return 0;
+  });
 
   const filteredSpareParts = spareParts.filter(sp => {
     const matchesVessel = sp.locationType === 'Land Storage' || !targetVesselId || sp.vesselId === targetVesselId;
@@ -131,11 +174,17 @@ export const InventoryProcurement: React.FC = () => {
     const matchesCategory = categoryFilter === 'All' || 
       (categoryFilter === 'Spare Part' && sp.itemCategory.includes('Spare Part')) ||
       (categoryFilter === 'Consumable' && sp.itemCategory.includes('Consumable'));
+    
+    let matchesStock = true;
+    if (stockStatusFilter === 'Low Stock') matchesStock = sp.stockQty <= sp.minStockQty;
+    if (stockStatusFilter === 'Healthy') matchesStock = sp.stockQty > sp.minStockQty;
+
     const matchesCondition = conditionFilter === 'All' || sp.conditionStatus === conditionFilter;
     const matchesSearch = sp.partName.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           sp.partNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          sp.locationName.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesVessel && matchesStorage && matchesCategory && matchesCondition && matchesSearch;
+                          (sp.locationName || '').toLowerCase().includes(searchTerm.toLowerCase());
+                          
+    return matchesVessel && matchesStorage && matchesCategory && matchesStock && matchesCondition && matchesSearch;
   });
 
   const openAddItemModal = () => {
@@ -146,7 +195,8 @@ export const InventoryProcurement: React.FC = () => {
       itemCategory: 'Consumable (Oils, Supplies, Chemicals, Logbooks)',
       stockQty: 10,
       minStockQty: 3,
-      unitCostUSD: 120,
+      unitCostIDR: 120,
+      expectedLifespanHours: 6000,
       locationType: 'Land Storage',
       locationName: 'Singapore Central Marine Depot (Bay 4)',
       conditionStatus: 'Good / Ready',
@@ -162,7 +212,8 @@ export const InventoryProcurement: React.FC = () => {
       itemCategory: part.itemCategory,
       stockQty: part.stockQty,
       minStockQty: part.minStockQty,
-      unitCostUSD: part.unitCostUSD,
+      unitCostIDR: part.unitCostIDR,
+      expectedLifespanHours: part.expectedLifespanHours || 6000,
       locationType: part.locationType,
       locationName: part.locationName,
       conditionStatus: part.conditionStatus,
@@ -179,7 +230,8 @@ export const InventoryProcurement: React.FC = () => {
         itemCategory: itemFormData.itemCategory,
         stockQty: Number(itemFormData.stockQty),
         minStockQty: Number(itemFormData.minStockQty),
-        unitCostUSD: Number(itemFormData.unitCostUSD),
+        unitCostIDR: Number(itemFormData.unitCostIDR),
+        expectedLifespanHours: Number(itemFormData.expectedLifespanHours || 6000),
         locationType: itemFormData.locationType,
         locationName: itemFormData.locationName,
         conditionStatus: itemFormData.conditionStatus,
@@ -190,7 +242,8 @@ export const InventoryProcurement: React.FC = () => {
         vesselId: itemFormData.locationType === 'Ship Storage' ? (selectedVessel.id === 'all_vessels' ? vessels[0].id : selectedVessel.id) : undefined,
         stockQty: Number(itemFormData.stockQty),
         minStockQty: Number(itemFormData.minStockQty),
-        unitCostUSD: Number(itemFormData.unitCostUSD),
+        unitCostIDR: Number(itemFormData.unitCostIDR),
+        expectedLifespanHours: Number(itemFormData.expectedLifespanHours || 6000),
       });
     }
     setIsAddItemModalOpen(false);
@@ -231,7 +284,7 @@ export const InventoryProcurement: React.FC = () => {
       partName: '',
       partNumber: '',
       qtyRequested: 1,
-      unitPriceUSD: 100,
+      unitPriceIDR: 100,
       itemCategory: 'Spare Part (Non-Consumable)',
       supplierName: suppliers[0]?.name || 'MAN Energy Solutions Singapore Hub',
       status: 'Requested',
@@ -247,7 +300,7 @@ export const InventoryProcurement: React.FC = () => {
 
   const handleRequisitionSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const totalCost = reqFormData.itemsList.reduce((acc, item) => acc + (item.qtyRequested * item.unitPriceUSD), 0);
+    const totalCost = reqFormData.itemsList.reduce((acc, item) => acc + (item.qtyRequested * item.unitPriceIDR), 0);
     const firstSupplierName = reqFormData.itemsList[0]?.supplierName || suppliers[0]?.name || 'Multiple Suppliers';
 
     addRequisition({
@@ -256,7 +309,7 @@ export const InventoryProcurement: React.FC = () => {
       dateRequested: reqFormData.dateRequested,
       supplierName: firstSupplierName,
       items: reqFormData.itemsList,
-      totalCostUSD: totalCost,
+      totalCostIDR: totalCost,
       status: 'Vessel Requested',
       originLocationType: reqFormData.originLocationType,
       originLocationName: reqFormData.originLocationName,
@@ -276,6 +329,8 @@ export const InventoryProcurement: React.FC = () => {
       originLocationName: req.originLocationName,
       deliveryPort: req.deliveryPort,
       estimatedDeliveryDate: req.estimatedDeliveryDate,
+      attachmentLink: req.attachmentLink || '',
+      documentLink: req.documentLink || '',
       itemsList: req.items,
     });
   };
@@ -289,6 +344,8 @@ export const InventoryProcurement: React.FC = () => {
       estimatedDeliveryDate: reqFormData.estimatedDeliveryDate,
       originLocationType: reqFormData.originLocationType,
       originLocationName: reqFormData.originLocationName,
+      attachmentLink: (reqFormData as any).attachmentLink,
+      documentLink: (reqFormData as any).documentLink,
     });
     setEditingReqId(null);
   };
@@ -298,6 +355,11 @@ export const InventoryProcurement: React.FC = () => {
     setItemEditSupplier(item.supplierName || suppliers[0]?.name || '');
     setItemEditStatus(item.status || 'Requested');
     setItemEditDenialReason(item.denialReason || '');
+    setItemEditComment(item.comment || '');
+    setItemEditSize(item.size || '');
+    setItemEditQty(item.qtyRequested || 0);
+    setItemEditUnit(item.unit || '');
+    setItemEditUnitPrice(item.unitPriceIDR || 0);
   };
 
   const handleSaveItemEdit = (e: React.FormEvent) => {
@@ -307,6 +369,11 @@ export const InventoryProcurement: React.FC = () => {
       supplierName: itemEditSupplier,
       status: itemEditStatus,
       denialReason: itemEditStatus === 'Denied / Rejected' ? itemEditDenialReason : undefined,
+      comment: itemEditComment,
+      size: itemEditSize,
+      qtyRequested: itemEditQty,
+      unit: itemEditUnit,
+      unitPriceIDR: itemEditUnitPrice,
     });
     setItemEditState(null);
   };
@@ -418,6 +485,17 @@ export const InventoryProcurement: React.FC = () => {
                 {c}
               </button>
             ))}
+
+            <span className="text-slate-400 ml-4">Stock Status:</span>
+            <select 
+              value={stockStatusFilter} 
+              onChange={e => setStockStatusFilter(e.target.value as any)}
+              className="bg-ocean-900 border border-ocean-700 rounded-lg px-2 py-1 text-white"
+            >
+              <option value="All">All</option>
+              <option value="Healthy">Healthy Stock</option>
+              <option value="Low Stock">Low / Reorder</option>
+            </select>
           </div>
 
           {/* Items Grid */}
@@ -449,13 +527,13 @@ export const InventoryProcurement: React.FC = () => {
                     </div>
                     <div className="flex items-center justify-between text-[11px] text-slate-400">
                       <span>Location: {part.locationName}</span>
-                      <span>Unit: ${part.unitCostUSD}</span>
+                      <span>Unit: Rp {(part.unitCostIDR || 0).toLocaleString('id-ID')}</span>
                     </div>
                   </div>
                 </div>
 
                 <div className="pt-3 border-t border-ocean-800 flex items-center justify-between">
-                  <span className="text-xs font-bold text-sea-accent font-mono">${(part.stockQty * part.unitCostUSD).toLocaleString()} USD</span>
+                  <span className="text-xs font-bold text-sea-accent font-mono">Rp {(part.stockQty * part.unitCostIDR).toLocaleString('id-ID')}</span>
 
                   {activeRole !== 'owner' && (
                     <div className="flex items-center gap-1.5">
@@ -516,6 +594,53 @@ export const InventoryProcurement: React.FC = () => {
       {/* TAB 2: REQUISITION ORDERS */}
       {activeTab === 'requisitions' && (
         <div className="space-y-4">
+          
+          {/* Requisition Filters & Sort */}
+          <div className="flex flex-wrap items-center gap-3 bg-ocean-950 p-3 rounded-xl border border-ocean-800 text-xs font-mono">
+            <div className="flex items-center gap-2">
+              <span className="text-slate-400">Status:</span>
+              <select value={reqFilterStatus} onChange={e => setReqFilterStatus(e.target.value)} className="bg-ocean-900 border border-ocean-700 rounded-lg px-2 py-1 text-white">
+                <option value="All">All</option>
+                <option value="Draft">Draft</option>
+                <option value="Vessel Requested">Vessel Requested</option>
+                <option value="PO Issued">PO Issued</option>
+                <option value="In Transit">In Transit</option>
+                <option value="Partially Delivered">Partially Delivered</option>
+                <option value="Completed">Completed</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-slate-400">Vendor:</span>
+              <select value={reqFilterVendor} onChange={e => setReqFilterVendor(e.target.value)} className="bg-ocean-900 border border-ocean-700 rounded-lg px-2 py-1 text-white max-w-[150px] truncate">
+                <option value="All">All Vendors</option>
+                {suppliers.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-slate-400">Urgency:</span>
+              <select value={reqFilterUrgency} onChange={e => setReqFilterUrgency(e.target.value)} className="bg-ocean-900 border border-ocean-700 rounded-lg px-2 py-1 text-white">
+                <option value="All">All</option>
+                <option value="Urgent Only">Urgent Only</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-2 ml-auto">
+              <span className="text-slate-400">Sort By:</span>
+              <select value={reqSortBy} onChange={e => setReqSortBy(e.target.value)} className="bg-ocean-900 border border-ocean-700 rounded-lg px-2 py-1 text-white">
+                <option value="Date (Newest)">Date (Newest)</option>
+                <option value="Date (Oldest)">Date (Oldest)</option>
+                <option value="Price (Highest)">Price (Highest)</option>
+                <option value="Price (Lowest)">Price (Lowest)</option>
+                <option value="Urgency">Urgency</option>
+              </select>
+            </div>
+          </div>
+
+          {vesselRequisitions.length === 0 && (
+            <div className="text-center py-10 text-slate-400 font-mono text-sm">
+              No requisitions found matching the current filters.
+            </div>
+          )}
+
           {vesselRequisitions.map(req => (
             <div key={req.id} className="glass-panel rounded-2xl p-5 space-y-4 border border-ocean-800 font-sans">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-ocean-800 pb-3 font-mono">
@@ -525,8 +650,17 @@ export const InventoryProcurement: React.FC = () => {
                     {req.requisitionNo}
                   </h3>
                   <p className="text-xs text-slate-400">
-                    Requested by {req.requestedBy} on {req.dateRequested} • Delivery Port: <strong className="text-white">{req.deliveryPort}</strong>
+                    Requested by <strong className="text-white">{req.requestedBy}</strong> on {new Date(req.dateRequested).toLocaleDateString()}
+                    <span className="mx-2">•</span> Ship: <strong className="text-white">{req.vesselName || '-'}</strong>
+                    <span className="mx-2">•</span> Dept: <strong className="text-white">{req.department || '-'}</strong>
+                    <span className="mx-2">•</span> Bagian: <strong className="text-white">{req.bagian || '-'}</strong>
                   </p>
+                  {(req.attachmentLink || req.documentLink) && (
+                    <div className="flex gap-3 mt-1.5 font-sans">
+                      {req.attachmentLink && <a href={req.attachmentLink} target="_blank" rel="noreferrer" className="text-[11px] text-sea-accent hover:underline flex items-center gap-1">View Attachment</a>}
+                      {req.documentLink && <a href={req.documentLink} target="_blank" rel="noreferrer" className="text-[11px] text-sea-accent hover:underline flex items-center gap-1">View Document</a>}
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-3">
@@ -570,47 +704,105 @@ export const InventoryProcurement: React.FC = () => {
 
               {/* Items List in Order with Per-Item Vendors & Statuses */}
               <div className="space-y-2">
-                <h4 className="text-xs font-bold text-slate-400 font-mono uppercase">Requisition Line Items ({req.items.length})</h4>
-                <div className="divide-y divide-ocean-850 font-mono text-xs">
-                  {req.items.map((item, idx) => (
-                    <div key={idx} className="py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div>
-                        <p className="font-bold text-white">{item.partName} <span className="text-slate-400 text-xs">(P/N: {item.partNumber})</span></p>
-                        <p className="text-slate-400 text-[11px]">
-                          Assigned Vendor: <strong className="text-sea-accent">{item.supplierName || 'Unassigned'}</strong> • Status: <strong className={`px-1.5 py-0.5 rounded text-[10px] ${
-                            item.status === 'Approved' ? 'bg-sea-emerald/20 text-sea-emerald' :
-                            item.status === 'Denied / Rejected' ? 'bg-sea-rose/20 text-sea-rose' :
-                            item.status === 'Ordered to Vendor' ? 'bg-sea-accent/20 text-sea-accent' : 'bg-ocean-800 text-slate-300'
-                          }`}>{item.status || 'Requested'}</strong>
-                        </p>
-                        {item.denialReason && (
-                          <p className="text-sea-rose text-[11px] italic">Rejection Reason: "{item.denialReason}"</p>
-                        )}
-                      </div>
-
-                      <div className="flex items-center gap-3 shrink-0">
-                        <span className="font-bold text-white">{item.qtyRequested} units @ ${item.unitPriceUSD} = ${(item.qtyRequested * item.unitPriceUSD).toLocaleString()}</span>
-                        
-                        {activeRole !== 'owner' && (
-                          <button
-                            onClick={() => openItemEditModal(req.id, idx, item)}
-                            className="px-2.5 py-1 rounded bg-ocean-800 hover:bg-ocean-750 text-sea-accent text-[11px] font-bold"
-                          >
-                            Edit Item & Vendor
-                          </button>
-                        )}
-
-                        {activeRole !== 'owner' && req.items.length > 1 && (
-                          <button
-                            onClick={() => removeRequisitionItem(req.id, idx)}
-                            className="text-sea-rose hover:underline text-[11px]"
-                          >
-                            Remove
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-slate-400 font-mono uppercase">Requisition Line Items ({req.items.length})</h4>
+                  <div className="text-sm font-bold text-white bg-ocean-900 px-3 py-1.5 rounded-lg border border-ocean-700">
+                    Order Total: <span className="text-sea-accent">Rp {req.items.reduce((sum, item) => item.status !== 'Denied / Rejected' ? sum + (item.qtyRequested * (item.unitPriceIDR || 0)) : sum, 0).toLocaleString('id-ID')}</span>
+                  </div>
+                </div>
+                <div className="overflow-x-auto rounded-xl border border-ocean-800">
+                  <table className="w-full text-left text-xs whitespace-nowrap">
+                    <thead className="bg-ocean-900 text-slate-400">
+                      <tr>
+                        <th className="px-4 py-3 font-semibold">Category</th>
+                        <th className="px-4 py-3 font-semibold">Item & P/N</th>
+                        <th className="px-4 py-3 font-semibold">Size / Spec</th>
+                        <th className="px-4 py-3 font-semibold">Qty</th>
+                        <th className="px-4 py-3 font-semibold">Unit Price</th>
+                        <th className="px-4 py-3 font-semibold">Total Price</th>
+                        <th className="px-4 py-3 font-semibold">Status & Vendor</th>
+                        <th className="px-4 py-3 font-semibold">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-ocean-850 bg-ocean-950/50">
+                      {req.items.map((item, idx) => (
+                        <tr key={idx} className={item.status === 'Denied / Rejected' ? 'opacity-60 bg-sea-rose/5' : 'hover:bg-ocean-800/30'}>
+                          <td className="px-4 py-3 text-slate-300">{item.itemCategory}</td>
+                          <td className="px-4 py-3">
+                            <div className="flex flex-col gap-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-white">{item.partName}</span>
+                                {item.isUrgent && <span className="text-[9px] font-bold uppercase bg-sea-amber/20 text-sea-amber border border-sea-amber/30 px-1 rounded">Urgent</span>}
+                              </div>
+                              <span className="text-slate-400 text-[10px] font-mono">P/N: {item.partNumber}</span>
+                              {item.notes && <span className="text-[10px] italic text-slate-400">Crew: {item.notes}</span>}
+                              {item.comment && <span className="text-[10px] italic text-blue-400">Office: {item.comment}</span>}
+                              {item.denialReason && <span className="text-[10px] italic text-sea-rose">Reject: {item.denialReason}</span>}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-slate-300">{item.size || '-'}</td>
+                          <td className="px-4 py-3 font-bold text-white">{item.qtyRequested} {item.unit || 'pcs'}</td>
+                          <td className="px-4 py-3 font-mono text-slate-300">Rp {(item.unitPriceIDR || 0).toLocaleString('id-ID')}</td>
+                          <td className="px-4 py-3 font-mono font-bold text-sea-accent">Rp {(item.qtyRequested * (item.unitPriceIDR || 0)).toLocaleString('id-ID')}</td>
+                          <td className="px-4 py-3">
+                            <div className="flex flex-col gap-1.5 items-start">
+                              <strong className={`px-1.5 py-0.5 rounded text-[10px] ${
+                                item.status === 'Approved' ? 'bg-sea-emerald/20 text-sea-emerald' :
+                                item.status === 'Denied / Rejected' ? 'bg-sea-rose/20 text-sea-rose' :
+                                item.status === 'Ordered to Vendor' ? 'bg-sea-accent/20 text-sea-accent' : 'bg-ocean-800 text-slate-300'
+                              }`}>{item.status || 'Requested'}</strong>
+                              <span className="text-[10px] text-slate-400">Vendor: <span className="text-white">{item.supplierName || 'Unassigned'}</span></span>
+                              
+                              {item.status === 'Delivered & Received' && (
+                                <div className="mt-1 flex items-center gap-1 bg-ocean-900/50 p-1 rounded border border-ocean-800">
+                                  <span className="text-[9px] text-slate-400 font-bold uppercase">Rate:</span>
+                                  <div className="flex gap-0.5">
+                                    {[1, 2, 3, 4, 5].map(star => (
+                                      <button
+                                        key={star}
+                                        onClick={() => updateRequisitionItem(req.id, idx, { vendorRating: star })}
+                                        className={`p-0.5 rounded transition ${item.vendorRating && item.vendorRating >= star ? 'text-amber-400' : 'text-slate-600 hover:text-amber-400/50'}`}
+                                      >
+                                        <Star className="w-3 h-3 fill-current" />
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {item.vendorRating && item.status !== 'Delivered & Received' && (
+                                <div className="mt-1 flex items-center gap-1 bg-ocean-900/50 p-1 rounded border border-ocean-800">
+                                  <span className="text-[9px] text-slate-400 font-bold uppercase">Rating:</span>
+                                  <div className="flex gap-0.5">
+                                    {[...Array(item.vendorRating)].map((_, i) => <span key={i} className="text-amber-400 text-[10px]">★</span>)}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex flex-col gap-2 items-end">
+                              {activeRole !== 'owner' && (
+                                <button
+                                  onClick={() => openItemEditModal(req.id, idx, item)}
+                                  className="px-2.5 py-1 rounded bg-ocean-800 hover:bg-ocean-750 text-sea-accent text-[10px] font-bold w-full"
+                                >
+                                  Edit Item
+                                </button>
+                              )}
+                              {activeRole !== 'owner' && req.items.length > 1 && (
+                                <button
+                                  onClick={() => removeRequisitionItem(req.id, idx)}
+                                  className="text-sea-rose hover:underline text-[10px] w-full text-right"
+                                >
+                                  Remove
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </div>
@@ -649,25 +841,65 @@ export const InventoryProcurement: React.FC = () => {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 font-sans">
             {suppliers.map(sup => (
-              <div key={sup.id} className="glass-panel rounded-2xl p-5 space-y-3 border border-ocean-800 flex flex-col justify-between">
+              <div key={sup.id} className="glass-panel glass-panel-hover rounded-2xl p-5 space-y-3 border border-ocean-800 flex flex-col justify-between">
                 <div className="space-y-2">
                   <div className="flex items-center justify-between font-mono">
-                    <span className="text-xs font-bold text-white">{sup.name}</span>
-                    <span className="px-2 py-0.5 rounded bg-sea-emerald/20 text-sea-emerald text-[10px] font-bold">
+                    <span className="text-sm font-bold text-white">{sup.name}</span>
+                    <span className="px-2.5 py-0.5 rounded bg-sea-emerald/20 text-sea-emerald text-[10px] font-bold border border-sea-emerald/30">
                       {sup.status}
                     </span>
                   </div>
 
                   <p className="text-xs text-slate-400 font-mono">{sup.category} • Country: {sup.country}</p>
-                  <p className="text-xs text-slate-300">Email: {sup.contactEmail} • Phone: {sup.phone || 'N/A'}</p>
-                  <p className="text-xs text-slate-400 italic bg-ocean-950 p-2.5 rounded-lg">"{sup.performanceNotes}"</p>
+                  
+                  {/* PIC Contact & Area Coverage Fields */}
+                  <div className="p-3 rounded-xl bg-ocean-950 border border-ocean-850 space-y-1.5 text-xs font-mono">
+                    <div className="flex items-center justify-between text-slate-200 font-bold">
+                      <span>PIC: {sup.picName || 'Direct Sales Dept'}</span>
+                      <span className="text-sea-accent">{sup.picPhone || sup.phone}</span>
+                    </div>
+                    <div className="text-[11px] text-slate-400">
+                      <span>Email: <strong className="text-slate-200">{sup.picEmail || sup.contactEmail}</strong></span>
+                    </div>
+                    <div className="text-[11px] text-sea-amber">
+                      <span>Ports Coverage: <strong>{sup.areaCoverage || 'Global Maritime Ports'}</strong></span>
+                    </div>
+                    {sup.supplyCategories && sup.supplyCategories.length > 0 && (
+                      <div className="flex items-center gap-1 flex-wrap pt-1">
+                        {sup.supplyCategories.map((cat, i) => (
+                          <span key={i} className="px-2 py-0.5 rounded bg-ocean-900 text-slate-300 text-[9px] border border-ocean-800">
+                            {cat}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <p className="text-xs text-slate-400 italic bg-ocean-900 p-2.5 rounded-lg border border-ocean-800 font-sans">
+                    "{sup.performanceNotes}"
+                  </p>
                 </div>
 
                 <div className="pt-3 border-t border-ocean-800 flex items-center justify-between font-mono text-xs">
-                  <span className="text-sea-amber font-bold">Rating: {sup.rating} / 5.0 ⭐</span>
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-sea-amber font-bold text-sm">⭐ {sup.rating} / 5.0 Rating</span>
+                    <span className="text-[9px] text-slate-500 uppercase tracking-widest font-bold">Dynamic Delivery Avg</span>
+                  </div>
 
-                  {activeRole !== 'owner' && (
-                    <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        setReqFilterVendor(sup.name);
+                        setActiveTab('requisitions');
+                      }}
+                      className="px-2 py-1.5 rounded-lg bg-ocean-900 hover:bg-ocean-800 text-sea-accent border border-sea-accent/30 text-xs transition flex items-center gap-1"
+                      title="View Orders"
+                    >
+                      <ShoppingCart className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Orders</span>
+                    </button>
+                    {activeRole !== 'owner' && (
+                      <>
                       <button
                         onClick={() => {
                           setEditingVendor(sup);
@@ -681,6 +913,10 @@ export const InventoryProcurement: React.FC = () => {
                             address: sup.address || '',
                             status: sup.status,
                             performanceNotes: sup.performanceNotes || '',
+                            picName: sup.picName || '',
+                            picPhone: sup.picPhone || '',
+                            picEmail: sup.picEmail || '',
+                            areaCoverage: sup.areaCoverage || '',
                           });
                           setIsAddVendorModalOpen(true);
                         }}
@@ -701,14 +937,15 @@ export const InventoryProcurement: React.FC = () => {
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
+                      </>
+                    )}
                     </div>
-                  )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
       {/* Transfer Part to Ship Modal */}
       {transferModalPart && (
@@ -861,6 +1098,32 @@ export const InventoryProcurement: React.FC = () => {
                 </select>
               </div>
 
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="block text-slate-400 mb-1">Quantity</label>
+                  <input type="number" value={itemEditQty} onChange={e => setItemEditQty(Number(e.target.value))} className="w-full bg-ocean-900 border border-ocean-700 rounded-lg px-3 py-2 text-white font-mono" />
+                </div>
+                <div>
+                  <label className="block text-slate-400 mb-1">Unit</label>
+                  <input type="text" value={itemEditUnit} onChange={e => setItemEditUnit(e.target.value)} className="w-full bg-ocean-900 border border-ocean-700 rounded-lg px-3 py-2 text-white" />
+                </div>
+                <div>
+                  <label className="block text-slate-400 mb-1">Unit Price (Rp)</label>
+                  <input type="number" value={itemEditUnitPrice} onChange={e => setItemEditUnitPrice(Number(e.target.value))} className="w-full bg-ocean-900 border border-ocean-700 rounded-lg px-3 py-2 text-white font-mono" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-slate-400 mb-1">Size / Spec</label>
+                  <input type="text" value={itemEditSize} onChange={e => setItemEditSize(e.target.value)} className="w-full bg-ocean-900 border border-ocean-700 rounded-lg px-3 py-2 text-white" />
+                </div>
+                <div>
+                  <label className="block text-slate-400 mb-1">Office Comment</label>
+                  <input type="text" value={itemEditComment} onChange={e => setItemEditComment(e.target.value)} className="w-full bg-ocean-900 border border-ocean-700 rounded-lg px-3 py-2 text-white" />
+                </div>
+              </div>
+
               {itemEditStatus === 'Denied / Rejected' && (
                 <div>
                   <label className="block text-slate-400 mb-1">Rejection / Denial Reason</label>
@@ -936,7 +1199,7 @@ export const InventoryProcurement: React.FC = () => {
                   {reqFormData.itemsList.map((item, idx) => (
                     <div key={idx} className="p-2 rounded bg-ocean-950 flex items-center justify-between">
                       <div>
-                        <span className="font-bold text-white">{item.partName}</span> (P/N: {item.partNumber}) • {item.qtyRequested}x @ ${item.unitPriceUSD}
+                        <span className="font-bold text-white">{item.partName}</span> (P/N: {item.partNumber}) • {item.qtyRequested}x @ Rp {(item.unitPriceIDR || 0).toLocaleString('id-ID')}
                         <p className="text-slate-400 text-[10px]">Vendor: <strong className="text-sea-accent">{item.supplierName}</strong></p>
                       </div>
                       <button
@@ -1138,11 +1401,11 @@ export const InventoryProcurement: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-400 mb-1">Unit Cost ($)</label>
+                  <label className="block text-slate-400 mb-1">Unit Cost (Rp)</label>
                   <input
                     type="number"
-                    value={itemFormData.unitCostUSD}
-                    onChange={e => setItemFormData({ ...itemFormData, unitCostUSD: Number(e.target.value) })}
+                    value={itemFormData.unitCostIDR}
+                    onChange={e => setItemFormData({ ...itemFormData, unitCostIDR: Number(e.target.value) })}
                     className="w-full bg-ocean-900 border border-ocean-700 rounded-lg px-3 py-2 text-white font-mono"
                   />
                 </div>
@@ -1199,9 +1462,61 @@ export const InventoryProcurement: React.FC = () => {
                 />
               </div>
 
+              {/* PIC Contact & Coverage Details */}
+              <div className="p-3 rounded-xl bg-ocean-950 border border-ocean-850 space-y-2">
+                <span className="text-[10px] font-mono font-bold text-sea-accent uppercase block">PIC DIRECT CONTACT DETAILS</span>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <label className="block text-slate-400 mb-1">PIC Name & Position</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Klaus Lindner (Sales Head)"
+                      value={vendorFormData.picName}
+                      onChange={e => setVendorFormData({ ...vendorFormData, picName: e.target.value })}
+                      className="w-full bg-ocean-900 border border-ocean-700 rounded-lg px-2.5 py-1.5 text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-400 mb-1">PIC Direct Phone</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. +49 40 3110 889"
+                      value={vendorFormData.picPhone}
+                      onChange={e => setVendorFormData({ ...vendorFormData, picPhone: e.target.value })}
+                      className="w-full bg-ocean-900 border border-ocean-700 rounded-lg px-2.5 py-1.5 text-white font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <label className="block text-slate-400 mb-1">PIC Direct Email</label>
+                    <input
+                      type="email"
+                      placeholder="spares@vendor.com"
+                      value={vendorFormData.picEmail}
+                      onChange={e => setVendorFormData({ ...vendorFormData, picEmail: e.target.value })}
+                      className="w-full bg-ocean-900 border border-ocean-700 rounded-lg px-2.5 py-1.5 text-white font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-400 mb-1">Area Coverage Ports</label>
+                    <input
+                      type="text"
+                      placeholder="Singapore, Rotterdam, Houston"
+                      value={vendorFormData.areaCoverage}
+                      onChange={e => setVendorFormData({ ...vendorFormData, areaCoverage: e.target.value })}
+                      className="w-full bg-ocean-900 border border-ocean-700 rounded-lg px-2.5 py-1.5 text-white"
+                    />
+                  </div>
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-400 mb-1">Contact Email</label>
+                  <label className="block text-slate-400 mb-1">Company Contact Email</label>
                   <input
                     type="email"
                     required
@@ -1221,17 +1536,7 @@ export const InventoryProcurement: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-400 mb-1">Audit Rating (Out of 5.0)</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    value={vendorFormData.rating}
-                    onChange={e => setVendorFormData({ ...vendorFormData, rating: Number(e.target.value) })}
-                    className="w-full bg-ocean-900 border border-ocean-700 rounded-lg px-3 py-2 text-white font-mono"
-                  />
-                </div>
+              <div className="grid grid-cols-1 gap-3">
                 <div>
                   <label className="block text-slate-400 mb-1">Supplier Status</label>
                   <select

@@ -16,6 +16,26 @@ export interface VesselDimensions {
   cargoCapacityM3: number; // Total Hold Grain/Bale Volume
 }
 
+export interface FuelConsumptionRates {
+  sailing: number;    // Liters per hour (L/h)
+  shifting: number;   // Liters per hour (L/h)
+  waiting: number;    // Liters per hour (L/h)
+  loading: number;    // Liters per hour (L/h)
+  discharge: number;  // Liters per hour (L/h)
+  bunkering?: number; // Rate or quantity
+  customRates?: Record<string, number>;
+}
+
+export type ShipState = 
+  | 'Sailing' 
+  | 'Shifting' 
+  | 'Waiting' 
+  | 'Loading' 
+  | 'Discharge' 
+  | 'Bunkering' 
+  | 'Anchorage' 
+  | 'Laid Up';
+
 export interface Vessel {
   id: string;
   name: string;
@@ -28,6 +48,18 @@ export interface Vessel {
   currentLocation: string;
   totalRunningHours: number;
   dimensions?: VesselDimensions;
+  currentROB_MT?: number; // Remaining Fuel Onboard in Metric Tons
+  currentState?: ShipState;
+  consumptionRates?: FuelConsumptionRates;
+}
+
+export interface AttachmentFile {
+  id: string;
+  name: string;
+  url: string;
+  type: 'image' | 'pdf' | 'document';
+  sizeBytes?: number;
+  uploadedAt: string;
 }
 
 export type EquipmentCategory = 
@@ -37,11 +69,23 @@ export type EquipmentCategory =
   | 'Pumps & Piping' 
   | 'Purifiers & Separators' 
   | 'Steering & Deck Machinery' 
-  | 'Safety & Firefighting';
+  | 'Safety & Firefighting'
+  | 'Portable Instruments';
+
+export interface EquipmentTransferLog {
+  id: string;
+  equipmentId: string;
+  fromVesselId: string;
+  toVesselId: string; // can be 'Land Storage'
+  date: string;
+  transferredBy: string;
+  notes?: string;
+}
 
 export interface Equipment {
   id: string;
   vesselId: string;
+  parentId?: string; // Sub-system hierarchy
   name: string;
   category: EquipmentCategory;
   maker: string;
@@ -50,9 +94,23 @@ export interface Equipment {
   location: string;
   initialRunningHours: number;
   runningHours: number;
+  tboHours?: number; // Time Between Overhauls (hrs)
+  lastOverhaulHours?: number; // Running hours counter at last major overhaul
+  solasMarpolTags?: string[]; // e.g. ['SOLAS Emergency', 'MARPOL Annex VI']
+  classCmsCode?: string; // e.g. 'DNV-CMS-111.01'
+  diagnostics?: {
+    vibrationMms?: number;
+    bearingTempC?: number;
+    insulationMOmega?: number;
+  };
+  diagnosticHistory?: DiagnosticHistoryPoint[];
+  attachments?: AttachmentFile[];
   criticality: 'High' | 'Medium' | 'Low';
   lastOverhaulDate: string;
   status: 'Operational' | 'Requires Service' | 'Critical Repair';
+  isPortable?: boolean;
+  isDeleted?: boolean;
+  linkedVesselStates?: ShipState[]; // E.g., ['Sailing', 'Shifting'] to auto-log hours
 }
 
 export type StorageLocationType = 'Land Storage' | 'Ship Storage';
@@ -73,7 +131,7 @@ export interface SparePartItem {
   itemCategory: ItemCategory;
   stockQty: number;
   minStockQty: number;
-  unitCostUSD: number;
+  unitCostIDR: number;
   locationType: StorageLocationType;
   locationName: string;
   conditionStatus: ItemConditionStatus;
@@ -83,6 +141,9 @@ export interface SparePartItem {
   installedAtRunningHours?: number;
   installedDate?: string;
   isCurrentlyInstalled?: boolean;
+  expectedLifespanHours?: number; // Expected lifespan in running hours
+  expectedLifespanDays?: number;  // Expected lifespan in calendar days
+  attachments?: AttachmentFile[];
 }
 
 export interface SparePartReplacementRecord {
@@ -129,7 +190,7 @@ export interface RequisitionItem {
   partName: string;
   partNumber: string;
   qtyRequested: number;
-  unitPriceUSD: number;
+  unitPriceIDR: number;
   itemCategory: ItemCategory;
   supplierName?: string; // Assigned vendor for this specific item!
   status?: RequisitionItemStatus; // Status of this specific item!
@@ -144,7 +205,7 @@ export interface RequisitionOrder {
   dateRequested: string;
   supplierName?: string;
   items: RequisitionItem[];
-  totalCostUSD: number;
+  totalCostIDR: number;
   status: RequisitionStatus;
   originLocationType: StorageLocationType;
   originLocationName: string;
@@ -164,6 +225,11 @@ export interface Supplier {
   status: 'Approved Supplier' | 'Under Audit' | 'Blacklisted';
   performanceNotes?: string;
   activeOrdersCount?: number;
+  picName?: string;
+  picPhone?: string;
+  picEmail?: string;
+  areaCoverage?: string; // e.g. "Singapore, Rotterdam, Houston, Shanghai"
+  supplyCategories?: string[];
 }
 
 /* =========================================================================
@@ -277,6 +343,7 @@ export interface IncidentReport {
   severity: 'High' | 'Medium' | 'Low';
   rootCause: string;
   correctiveAction: string;
+  equipmentId?: string;
   crewInvolvedIds?: string[];
   crewInvolvedNames?: string;
   handledByCrewName?: string;
@@ -313,6 +380,12 @@ export interface NonConformity {
 
 export type IntervalType = 'Calendar' | 'RunningHours' | 'Both';
 
+export interface ProcedureStep {
+  id: string;
+  stepText: string;
+  isCompleted: boolean;
+}
+
 export interface MaintenanceJob {
   id: string;
   vesselId: string;
@@ -335,6 +408,9 @@ export interface MaintenanceJob {
   status: 'Upcoming' | 'Due' | 'Overdue' | 'Completed';
   estimatedManHours: number;
   requiredParts: string[];
+  procedureChecklist?: ProcedureStep[];
+  isAutoGenerated?: boolean;
+  autoGeneratedPartId?: string;
 }
 
 export interface JobExecution {
@@ -380,9 +456,9 @@ export interface WorkOrderCard {
   equipmentRef: string;
   scopeDescription: string;
   contractorName?: string;
-  contractorQuoteUSD?: number;
-  actualCostUSD?: number;
-  plannedBudgetUSD: number;
+  contractorQuoteIDR?: number;
+  actualCostIDR?: number;
+  plannedBudgetIDR: number;
   status: 'Draft' | 'Sent for Tender' | 'Approved' | 'In Progress' | 'Inspection Ready' | 'Completed';
   publicToken: string;
   deadline: string;
@@ -397,7 +473,97 @@ export interface DrydockProject {
   location: string;
   startDate: string;
   endDate: string;
-  totalPlannedBudgetUSD: number;
-  totalActualCostUSD: number;
+  totalPlannedBudgetIDR: number;
+  totalActualCostIDR: number;
   status: 'Planning' | 'Underway' | 'Completed';
+}
+
+/* =========================================================================
+   OPERATIONS, VOYAGE LOGGING & FUEL ANOMALY ENGINE TYPES
+   ========================================================================= */
+
+export interface VesselActivityLog {
+  id: string;
+  vesselId: string;
+  vesselName?: string;
+  voyageId: string;
+  state: ShipState;
+  startTime: string;
+  endTime?: string;
+  durationHours: number;
+  startROB_MT: number;
+  endROB_MT: number;
+  reportedROB_MT?: number;
+  fuelConsumedMT: number;
+  locationOrPort: string;
+  loggedBy: string;
+  remarks: string;
+  isAnomalyGap?: boolean;
+  anomalyDetails?: string;
+}
+
+export interface VoyageLeg {
+  id: string; // Format: 023/D1/SA99/IX/2026
+  state: 'Loading' | 'Discharge' | 'Bunker' | 'Docking';
+  portName: string;
+  eta: string;
+  etd: string;
+  ata?: string;
+  atd?: string;
+  distanceNm: number;
+}
+
+export interface VoyagePlan {
+  id: string; // internal UUID
+  vesselId: string;
+  vesselName?: string;
+  voyageCount: number; // e.g., 23
+  year: number; // e.g., 2026
+  status: 'Planned' | 'In Progress' | 'Completed' | 'Cancelled';
+  legs: VoyageLeg[];
+  notes?: string;
+}
+
+export interface ShipTank {
+  id: string;
+  vesselId: string;
+  tankName: string;
+  fuelType: 'HFO' | 'MGO' | 'Lube Oil' | 'Sludge' | 'Bilge' | 'Fresh Water';
+  capacityMT: number;
+  currentLevelMT: number;
+  soundingMeters: number;
+  maxSoundingMeters: number;
+  temperatureC?: number;
+  lastSoundedDate: string;
+  soundedBy: string;
+}
+
+export interface MLCRestHourLog {
+  id: string;
+  vesselId: string;
+  crewId: string;
+  crewName: string;
+  rank: string;
+  date: string;
+  workHours: number;
+  restHours: number;
+  isCompliant: boolean;
+  violationRemarks?: string;
+  loggedBy: string;
+}
+
+export interface DiagnosticHistoryPoint {
+  date: string;
+  vibrationMMS: number;
+  bearingTempC: number;
+  lubeOilViscosityCSt?: number;
+}
+
+export interface Port {
+  id: string;
+  name: string;
+  unlocode?: string;
+  country: string;
+  latitude?: number;
+  longitude?: number;
 }

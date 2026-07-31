@@ -1,10 +1,10 @@
 import React from 'react';
 import { 
   LayoutDashboard, Wrench, CalendarCheck, Activity, 
-  Ship, ShieldAlert, ShoppingCart, Users, BarChart3, Layers 
+  Ship, ShieldAlert, ShoppingCart, Users, BarChart3, Layers, Compass 
 } from 'lucide-react';
 
-export type ActiveTab = 'overview' | 'equipment' | 'jobs' | 'daily_log' | 'drydock' | 'class_survey' | 'inventory' | 'crew' | 'safety' | 'analytics';
+export type ActiveTab = 'overview' | 'operations' | 'equipment' | 'jobs' | 'daily_log' | 'drydock' | 'class_survey' | 'inventory' | 'crew' | 'safety' | 'analytics';
 
 interface SidebarProps {
   activeTab: ActiveTab;
@@ -15,6 +15,7 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, overdueJobsCount }) => {
   const fleetNavItems = [
     { id: 'overview', label: 'Fleet Overview', icon: LayoutDashboard },
+    { id: 'operations', label: 'Voyage & Fleet Operations', icon: Compass },
     { id: 'equipment', label: 'Equipment Registry', icon: Wrench },
     { 
       id: 'jobs', 

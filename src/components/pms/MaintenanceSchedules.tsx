@@ -7,10 +7,12 @@ import {
 } from 'lucide-react';
 
 export const MaintenanceSchedules: React.FC = () => {
-  const { vessels, selectedVessel, jobs, addJob, updateJob, deleteJob, completeJob, executions, deleteJobExecution, equipment, spareParts, activeRole } = useApp();
+  const { vessels, selectedVessel, jobs, addJob, updateJob, deleteJob, completeJob, createRequisitionFromJob, executions, deleteJobExecution, equipment, spareParts, crewMembers, activeRole } = useApp();
   
   const [activeTab, setActiveTab] = useState<'upcoming' | 'overdue' | 'history'>('upcoming');
   const [priorityFilter, setPriorityFilter] = useState<string>('All');
+  const [typeFilter, setTypeFilter] = useState<string>('All');
+  const [surveyFilter, setSurveyFilter] = useState<boolean>(false);
   const [searchTerm, setSearchTerm] = useState('');
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -53,10 +55,12 @@ export const MaintenanceSchedules: React.FC = () => {
     if (activeTab === 'overdue') matchesTab = job.status === 'Overdue';
 
     const matchesPriority = priorityFilter === 'All' || job.priority === priorityFilter;
+    const matchesType = typeFilter === 'All' || job.intervalType === typeFilter;
+    const matchesSurvey = !surveyFilter || job.classSurveyRequired;
     const matchesSearch = job.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
                           job.equipmentName.toLowerCase().includes(searchTerm.toLowerCase());
 
-    return matchesVessel && matchesTab && matchesPriority && matchesSearch;
+    return matchesVessel && matchesTab && matchesPriority && matchesType && matchesSurvey && matchesSearch;
   });
 
   const filteredExecutions = executions.filter(exec => {
@@ -236,20 +240,48 @@ export const MaintenanceSchedules: React.FC = () => {
         </div>
 
         {activeTab !== 'history' && (
-          <div className="flex items-center gap-2 text-xs">
-            <span className="text-slate-400 font-mono">Priority:</span>
-            {['All', 'High', 'Medium', 'Low'].map(p => (
-              <button
-                key={p}
-                onClick={() => setPriorityFilter(p)}
-                className={`px-3 py-1 rounded-lg font-semibold transition ${
-                  priorityFilter === p ? 'bg-ocean-800 text-sea-accent border border-ocean-700' : 'text-slate-500 hover:text-slate-300'
-                }`}
-              >
-                {p}
-              </button>
-            ))}
-          </div>
+            <div className="flex flex-wrap items-center gap-4 bg-ocean-950 p-2 rounded-xl border border-ocean-800 text-xs">
+              <div className="flex items-center gap-1">
+                <Filter className="w-3.5 h-3.5 text-slate-400" />
+                <span className="text-slate-400 font-mono">Priority:</span>
+                {['All', 'High', 'Medium', 'Low'].map(p => (
+                  <button
+                    key={p}
+                    onClick={() => setPriorityFilter(p)}
+                    className={`px-3 py-1 rounded-lg font-semibold transition ${
+                      priorityFilter === p ? 'bg-ocean-800 text-sea-accent border border-ocean-700' : 'text-slate-500 hover:text-slate-300'
+                    }`}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-2 font-mono">
+                <span className="text-slate-400">Type:</span>
+                <select 
+                  value={typeFilter} 
+                  onChange={e => setTypeFilter(e.target.value)}
+                  className="bg-ocean-900 border border-ocean-700 rounded-lg px-2 py-1 text-white"
+                >
+                  <option value="All">All Intervals</option>
+                  <option value="Calendar-Based">Calendar-Based</option>
+                  <option value="Running Hours-Based">Running Hours</option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2 font-mono">
+                <label className="flex items-center gap-2 cursor-pointer text-slate-300">
+                  <input 
+                    type="checkbox"
+                    checked={surveyFilter}
+                    onChange={(e) => setSurveyFilter(e.target.checked)}
+                    className="rounded bg-ocean-900 border-ocean-700 text-sea-accent focus:ring-sea-accent/30"
+                  />
+                  Class Survey Only
+                </label>
+              </div>
+            </div>
         )}
       </div>
 
@@ -259,15 +291,35 @@ export const MaintenanceSchedules: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {filteredJobs.map(job => {
               const jobVessel = vessels.find(v => v.id === job.vesselId);
+              
+              // Spare Part Stock Check
+              const requiredPartsInStock = job.requiredParts.map(partStr => {
+                const matchedPart = spareParts.find(sp => partStr.toLowerCase().includes(sp.partName.toLowerCase()) || sp.partName.toLowerCase().includes(partStr.toLowerCase()));
+                return {
+                  name: partStr,
+                  stockQty: matchedPart ? matchedPart.stockQty : 0,
+                  isOutOfStock: !matchedPart || matchedPart.stockQty <= 0
+                };
+              });
+              const hasOutOfStockParts = requiredPartsInStock.some(p => p.isOutOfStock);
+
               return (
                 <div key={job.id} className="glass-panel glass-panel-hover rounded-2xl p-5 space-y-4 flex flex-col justify-between border border-ocean-800">
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border uppercase ${
-                        job.priority === 'High' ? 'bg-sea-rose/20 text-sea-rose border-sea-rose/40' : 'bg-sea-amber/20 text-sea-amber border-sea-amber/40'
-                      }`}>
-                        {job.priority} Priority • {job.intervalType} ({job.intervalDays}d / {job.intervalHours}h)
-                      </span>
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border uppercase ${
+                          job.priority === 'High' ? 'bg-sea-rose/20 text-sea-rose border-sea-rose/40' : 'bg-sea-amber/20 text-sea-amber border-sea-amber/40'
+                        }`}>
+                          {job.priority} Priority • {job.intervalType} ({job.intervalDays}d / {job.intervalHours}h)
+                        </span>
+
+                        {job.isAutoGenerated && (
+                          <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-sea-accent/20 text-sea-accent border border-sea-accent/40 uppercase flex items-center gap-1 animate-pulse">
+                            ⚡ Auto-Generated (Overdue Spare)
+                          </span>
+                        )}
+                      </div>
 
                       <span className="text-[10px] font-mono font-bold px-2.5 py-0.5 rounded bg-sea-purple/20 text-sea-purple border border-sea-purple/40 uppercase flex items-center gap-1">
                         <Ship className="w-3 h-3" />
@@ -278,6 +330,37 @@ export const MaintenanceSchedules: React.FC = () => {
                     <h3 className="text-base font-bold text-white">{job.title}</h3>
                     <p className="text-xs text-slate-300 font-mono">Machinery: <strong className="text-white">{job.equipmentName}</strong></p>
                     <p className="text-xs text-slate-400">{job.description}</p>
+
+                    {/* Stock Availability Alert & 1-Click Requisition Order */}
+                    {job.requiredParts.length > 0 && (
+                      <div className="p-3 rounded-xl bg-ocean-950/80 border border-ocean-850 space-y-2 font-mono text-xs">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase block">REQUIRED SPARE PARTS STOCK CHECK</span>
+                        {requiredPartsInStock.map((pt, idx) => (
+                          <div key={idx} className="flex items-center justify-between text-[11px]">
+                            <span className="text-slate-300 truncate">{pt.name}</span>
+                            <span className={`font-bold px-2 py-0.5 rounded ${
+                              pt.isOutOfStock ? 'bg-sea-rose/20 text-sea-rose border border-sea-rose/40' : 'bg-sea-emerald/20 text-sea-emerald'
+                            }`}>
+                              {pt.isOutOfStock ? '0 UNITS (OUT OF STOCK)' : `${pt.stockQty} Units in Stock`}
+                            </span>
+                          </div>
+                        ))}
+
+                        {hasOutOfStockParts && activeRole !== 'owner' && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const newReq = createRequisitionFromJob(job);
+                              alert(`⚡ Requisition Order ${newReq.requisitionNo} automatically generated and submitted for approval!`);
+                            }}
+                            className="w-full mt-1.5 py-1.5 rounded-lg bg-sea-rose/20 hover:bg-sea-rose/30 text-sea-rose border border-sea-rose/40 text-[11px] font-bold transition flex items-center justify-center gap-1.5"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>⚡ Create Requisition Order for Missing Spares</span>
+                          </button>
+                        )}
+                      </div>
+                    )}
 
                     <div className="p-3 rounded-xl bg-ocean-950/80 border border-ocean-850 space-y-1 font-mono text-xs">
                       <div className="flex items-center justify-between">
@@ -389,15 +472,37 @@ export const MaintenanceSchedules: React.FC = () => {
                 />
               </div>
 
+              {/* Step-by-Step Procedure Checklist */}
+              {completeJobModalTarget.procedureChecklist && completeJobModalTarget.procedureChecklist.length > 0 && (
+                <div className="p-3 rounded-xl bg-ocean-900 border border-ocean-800 space-y-2">
+                  <label className="block text-sea-accent font-bold font-mono">SAFETY & OVERHAUL PROCEDURE CHECKLIST</label>
+                  <div className="space-y-1.5">
+                    {completeJobModalTarget.procedureChecklist.map(step => (
+                      <label key={step.id} className="flex items-start gap-2 text-[11px] text-slate-300 cursor-pointer font-sans">
+                        <input
+                          type="checkbox"
+                          defaultChecked={step.isCompleted}
+                          className="mt-0.5 rounded border-ocean-700 text-sea-accent focus:ring-sea-accent"
+                        />
+                        <span>{step.stepText}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div>
-                <label className="block text-slate-400 mb-1">Completed By Engineer *</label>
-                <input
-                  type="text"
-                  required
+                <label className="block text-slate-400 mb-1 font-mono">Completed By Engineer (Point & Click) *</label>
+                <select
                   value={execFormData.completedBy}
                   onChange={e => setExecFormData({ ...execFormData, completedBy: e.target.value })}
-                  className="w-full bg-ocean-900 border border-ocean-700 rounded-lg px-3 py-2 text-white"
-                />
+                  className="w-full bg-ocean-900 border border-ocean-700 rounded-lg px-3 py-2 text-white font-bold"
+                >
+                  {crewMembers.filter(c => c.status === 'Onboard' && c.currentVesselId === completeJobModalTarget?.vesselId).map(c => (
+                    <option key={c.id} value={`${c.rank} ${c.fullName}`}>{c.rank} {c.fullName}</option>
+                  ))}
+                  <option value="External Shore Specialist">External Shore Specialist</option>
+                </select>
               </div>
 
               <div>
@@ -539,6 +644,21 @@ export const MaintenanceSchedules: React.FC = () => {
                     <option value="Low">Low Priority</option>
                   </select>
                 </div>
+              </div>
+
+              {/* Class Survey Toggle (Management Only) */}
+              <div className="flex items-center gap-2 p-3 bg-ocean-900/50 border border-ocean-800 rounded-lg">
+                <input
+                  type="checkbox"
+                  id="classSurveyToggle"
+                  checked={jobFormData.classSurveyRequired}
+                  onChange={e => setJobFormData({ ...jobFormData, classSurveyRequired: e.target.checked })}
+                  className="w-4 h-4 rounded border-ocean-700 text-sea-amber focus:ring-sea-amber"
+                />
+                <label htmlFor="classSurveyToggle" className="text-slate-300 cursor-pointer font-bold flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-sea-amber" />
+                  Flag as Statutory Class Survey Requirement
+                </label>
               </div>
 
               <div>

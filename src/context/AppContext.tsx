@@ -4,14 +4,16 @@ import {
   DailyLog, DrydockProject, WorkOrderCard, UserRole,
   SparePartItem, SparePartReplacementRecord, MachineryRunSession,
   RequisitionOrder, Supplier, CrewMember, IncidentReport, DrillRecord, NonConformity,
-  SeafarerMedicalRecord, SeafarerAccidentRecord, SeafarerCertificate, ItemConditionStatus, SeafarerStatus, RequisitionItem
+  SeafarerMedicalRecord, SeafarerAccidentRecord, SeafarerCertificate, ItemConditionStatus, SeafarerStatus, RequisitionItem,
+  VesselActivityLog, VoyagePlan,  FuelConsumptionRates, ShipState, ShipTank, MLCRestHourLog, EquipmentTransferLog, Port
 } from '../types';
 import { 
   initialVessels, initialEquipment, initialJobs, 
   initialExecutions, initialDailyLogs, initialDrydockProjects, initialWorkOrders,
   initialSpareParts, initialReplacementHistory, initialRunSessions,
   initialRequisitions, initialSuppliers, initialCrewMembers,
-  initialIncidents, initialDrills, initialNonConformities
+  initialIncidents, initialDrills, initialNonConformities,
+  initialVesselActivities, initialVoyagePlans,  initialShipTanks, initialMLCRestLogs, initialEquipmentTransfers, initialPorts
 } from '../data/mockData';
 
 interface AppContextType {
@@ -26,6 +28,8 @@ interface AppContextType {
   setActiveRole: (role: UserRole) => void;
 
   equipment: Equipment[];
+  equipmentTransfers: EquipmentTransferLog[];
+  transferEquipment: (equipmentId: string, toVesselId: string, notes?: string) => void;
   addEquipment: (eq: Omit<Equipment, 'id' | 'runningHours'>) => void;
   updateEquipment: (id: string, eq: Partial<Equipment>) => void;
   deleteEquipment: (id: string) => void;
@@ -44,7 +48,7 @@ interface AppContextType {
   deleteRunSession: (id: string) => void;
 
   requisitions: RequisitionOrder[];
-  addRequisition: (req: Omit<RequisitionOrder, 'id' | 'requisitionNo'>) => void;
+  addRequisition: (req: Omit<RequisitionOrder, 'id' | 'requisitionNo'> & { id?: string; requisitionNo?: string }) => void;
   updateRequisitionMetadata: (id: string, data: Partial<RequisitionOrder>) => void;
   updateRequisitionStatus: (id: string, status: RequisitionOrder['status']) => void;
   updateRequisitionItem: (requisitionId: string, itemIndex: number, itemUpdates: Partial<RequisitionItem>) => void;
@@ -99,13 +103,17 @@ interface AppContextType {
   updateJob: (id: string, job: Partial<MaintenanceJob>) => void;
   deleteJob: (id: string) => void;
   completeJob: (execution: Omit<JobExecution, 'id' | 'daysLateOrEarly'> & { startDate?: string }) => void;
+  createRequisitionFromJob: (job: MaintenanceJob) => RequisitionOrder;
   executions: JobExecution[];
+  logJobExecution: (exec: Omit<JobExecution, 'id' | 'daysLateOrEarly' | 'signedOffByChief'>) => void;
   deleteJobExecution: (id: string) => void;
   dailyLogs: DailyLog[];
   addDailyLog: (log: Omit<DailyLog, 'id'>) => void;
+  updateDailyLog: (id: string, log: Partial<DailyLog>) => void;
+  deleteDailyLog: (id: string) => void;
 
   drydockProjects: DrydockProject[];
-  addDrydockProject: (proj: Omit<DrydockProject, 'id'>) => void;
+  addDrydockProject: (proj: Omit<DrydockProject, 'id' | 'totalActualCostIDR'>) => void;
   updateDrydockProject: (id: string, proj: Partial<DrydockProject>) => void;
   deleteDrydockProject: (id: string) => void;
 
@@ -114,6 +122,35 @@ interface AppContextType {
   updateWorkOrder: (id: string, wo: Partial<WorkOrderCard>) => void;
   updateWorkOrderStatus: (id: string, status: WorkOrderCard['status']) => void;
   deleteWorkOrder: (id: string) => void;
+
+  vesselActivities: VesselActivityLog[];
+  addVesselActivity: (act: Omit<VesselActivityLog, 'id'>) => void;
+  deleteVesselActivity: (id: string) => void;
+
+  voyagePlans: VoyagePlan[];
+  addVoyagePlan: (voy: Omit<VoyagePlan, 'id'>) => void;
+  updateVoyagePlan: (id: string, voy: Partial<VoyagePlan>) => void;
+  deleteVoyagePlan: (id: string) => void;
+
+  ports: Port[];
+  addPort: (port: Omit<Port, 'id'>) => void;
+  updatePort: (id: string, port: Partial<Port>) => void;
+  deletePort: (id: string) => void;
+
+  
+  
+
+  updateConsumptionRates: (vesselId: string, rates: FuelConsumptionRates) => void;
+
+  tanks: ShipTank[];
+  updateTankSounding: (tankId: string, soundingMeters: number, currentLevelMT: number, temperatureC?: number, soundedBy?: string) => void;
+  addTank: (tank: Omit<ShipTank, 'id'>) => void;
+
+  simulateRunningHours: (vesselId: string, hoursToAdd?: number) => void;
+
+  mlcLogs: MLCRestHourLog[];
+  addMLCRestHourLog: (log: Omit<MLCRestHourLog, 'id'>) => void;
+  deleteMLCRestHourLog: (id: string) => void;
 
   resetToDefaultData: () => void;
 }
@@ -137,6 +174,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [equipment, setEquipment] = useState<Equipment[]>(() => {
     const saved = localStorage.getItem('marineos_equipment');
     return saved ? JSON.parse(saved) : initialEquipment;
+  });
+
+  const [equipmentTransfers, setEquipmentTransfers] = useState<EquipmentTransferLog[]>(() => {
+    const saved = localStorage.getItem('marineos_equipment_transfers');
+    return saved ? JSON.parse(saved) : initialEquipmentTransfers;
   });
 
   const [spareParts, setSpareParts] = useState<SparePartItem[]>(() => {
@@ -209,6 +251,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return saved ? JSON.parse(saved) : initialWorkOrders;
   });
 
+  const [vesselActivities, setVesselActivities] = useState<VesselActivityLog[]>(() => {
+    const saved = localStorage.getItem('marineos_vessel_activities');
+    return saved ? JSON.parse(saved) : initialVesselActivities;
+  });
+
+  const [voyagePlans, setVoyagePlans] = useState<VoyagePlan[]>(() => {
+    const saved = localStorage.getItem('marineos_voyage_plans');
+    return saved ? JSON.parse(saved) : initialVoyagePlans;
+  });
+
+  const [tanks, setTanks] = useState<ShipTank[]>(() => {
+    const saved = localStorage.getItem('marineos_ship_tanks');
+    return saved ? JSON.parse(saved) : initialShipTanks;
+  });
+
+  const [mlcLogs, setMlcLogs] = useState<MLCRestHourLog[]>(() => {
+    const saved = localStorage.getItem('marineos_mlc_logs');
+    return saved ? JSON.parse(saved) : initialMLCRestLogs;
+  });
+
+  const [ports, setPorts] = useState<Port[]>(() => {
+    const saved = localStorage.getItem('marineos_ports');
+    return saved ? JSON.parse(saved) : initialPorts;
+  });
+
   useEffect(() => { localStorage.setItem('marineos_vessels', JSON.stringify(vessels)); }, [vessels]);
   useEffect(() => { localStorage.setItem('marineos_selected_vessel_id', selectedVesselId); }, [selectedVesselId]);
   useEffect(() => { localStorage.setItem('marineos_active_role', activeRole); }, [activeRole]);
@@ -227,6 +294,127 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => { localStorage.setItem('marineos_daily_logs', JSON.stringify(dailyLogs)); }, [dailyLogs]);
   useEffect(() => { localStorage.setItem('marineos_drydock_projects', JSON.stringify(drydockProjects)); }, [drydockProjects]);
   useEffect(() => { localStorage.setItem('marineos_work_orders', JSON.stringify(workOrders)); }, [workOrders]);
+  useEffect(() => { localStorage.setItem('marineos_vessel_activities', JSON.stringify(vesselActivities)); }, [vesselActivities]);
+  useEffect(() => { localStorage.setItem('marineos_voyage_plans', JSON.stringify(voyagePlans)); }, [voyagePlans]);
+  useEffect(() => { localStorage.setItem('marineos_ship_tanks', JSON.stringify(tanks)); }, [tanks]);
+  useEffect(() => { localStorage.setItem('marineos_mlc_logs', JSON.stringify(mlcLogs)); }, [mlcLogs]);
+  useEffect(() => { localStorage.setItem('marineos_ports', JSON.stringify(ports)); }, [ports]);
+
+  // Dynamic Vendor Rating Calculation
+  useEffect(() => {
+    setSuppliers(prevSuppliers => {
+      let updated = false;
+      const newSuppliers = prevSuppliers.map(supplier => {
+        let totalRating = 0;
+        let ratedCount = 0;
+
+        requisitions.forEach(req => {
+          req.items.forEach(item => {
+            if (item.supplierName === supplier.name && item.vendorRating) {
+              totalRating += item.vendorRating;
+              ratedCount += 1;
+            }
+          });
+        });
+
+        // Only update if there are actual ratings.
+        if (ratedCount > 0) {
+          const computedRating = Number((totalRating / ratedCount).toFixed(1));
+          if (supplier.rating !== computedRating) {
+            updated = true;
+            return { ...supplier, rating: computedRating };
+          }
+        }
+        return supplier;
+      });
+
+      return updated ? newSuppliers : prevSuppliers;
+    });
+  }, [requisitions]);
+
+  // Automatic Overdue Spare Parts Task Generator
+  useEffect(() => {
+    const overdueSpares = spareParts.filter(sp => sp.isCurrentlyInstalled && sp.expectedLifespanHours && sp.equipmentId);
+    if (overdueSpares.length === 0) return;
+
+    let newJobsToAdd: MaintenanceJob[] = [];
+
+    overdueSpares.forEach(sp => {
+      const eq = equipment.find(e => e.id === sp.equipmentId);
+      if (!eq) return;
+
+      const installedHours = sp.installedAtRunningHours || 0;
+      const currentHours = eq.runningHours || 0;
+      const hoursActive = Math.max(0, currentHours - installedHours);
+      const lifespanLimit = sp.expectedLifespanHours || 6000;
+
+      if (hoursActive >= lifespanLimit) {
+        // Check if job already exists
+        const existingJob = jobs.find(j => j.autoGeneratedPartId === sp.id && j.status !== 'Completed');
+        if (!existingJob) {
+          const autoJob: MaintenanceJob = {
+            id: `job-auto-${sp.id}`,
+            vesselId: eq.vesselId,
+            vesselName: vessels.find(v => v.id === eq.vesselId)?.name || 'MV Pacific Star',
+            equipmentId: eq.id,
+            equipmentName: eq.name,
+            title: `[AUTO-GENERATED] Replace Overdue Spare Part: ${sp.partName}`,
+            description: `Automated PMS Safety Alert: Installed spare part "${sp.partName}" (P/N: ${sp.partNumber}) has accumulated ${hoursActive.toLocaleString()} running hours, reaching 100% of its expected operating lifespan (${lifespanLimit.toLocaleString()} hrs). Replacement is required immediately.`,
+            intervalType: 'RunningHours',
+            intervalHours: lifespanLimit,
+            nextDueDate: new Date().toISOString().split('T')[0],
+            classSurveyRequired: false,
+            priority: 'High',
+            status: 'Overdue',
+            estimatedManHours: 4,
+            requiredParts: [`${sp.partName} (PN: ${sp.partNumber})`],
+            isAutoGenerated: true,
+            autoGeneratedPartId: sp.id,
+            procedureChecklist: [
+              { id: 'step-1', stepText: 'Obtain Work Permit & Isolate electrical breaker (LOTO)', isCompleted: false },
+              { id: 'step-2', stepText: 'Depressurize machinery line & close isolation valves', isCompleted: false },
+              { id: 'step-3', stepText: 'Dismantle old spare part and inspect seating housing', isCompleted: false },
+              { id: 'step-4', stepText: 'Install new spare part and torque cover bolts to OEM specs', isCompleted: false },
+              { id: 'step-5', stepText: 'Perform pressure leak test & log replacement in PMS', isCompleted: false },
+            ]
+          };
+          newJobsToAdd.push(autoJob);
+        }
+      }
+    });
+
+    if (newJobsToAdd.length > 0) {
+      setJobs(prev => [...newJobsToAdd, ...prev]);
+    }
+  }, [equipment, spareParts]);
+
+  const createRequisitionFromJob = (job: MaintenanceJob): RequisitionOrder => {
+    const newReq: RequisitionOrder = {
+      id: `req-${Date.now()}`,
+      vesselId: job.vesselId,
+      requisitionNo: `REQ-AUTO-${Math.floor(1000 + Math.random() * 9000)}`,
+      requestedBy: activeRole === 'chief_engineer' ? 'Chief Engineer H. Vance' : '2nd Engineer M. Kowalski',
+      dateRequested: new Date().toISOString().split('T')[0],
+      items: job.requiredParts.map(partStr => ({
+        id: `item-${Date.now()}-${Math.floor(Math.random() * 100)}`,
+        partName: partStr,
+        partNumber: 'AUTO-REQ-PART',
+        qtyRequested: 2,
+        unitPriceIDR: 850,
+        itemCategory: 'Spare Part (Non-Consumable)',
+        supplierName: suppliers[0]?.name || 'MAN Energy Solutions Singapore Hub',
+        status: 'Requested'
+      })),
+      totalCostIDR: job.requiredParts.length * 1700,
+      status: 'Vessel Requested',
+      originLocationType: 'Land Storage',
+      originLocationName: 'Singapore Central Marine Depot (Bay 4)',
+      deliveryPort: 'Port of Singapore (Next Bunkering Call)',
+      estimatedDeliveryDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+    };
+    setRequisitions(prev => [newReq, ...prev]);
+    return newReq;
+  };
 
   const selectedVessel = selectedVesselId === 'all_vessels'
     ? {
@@ -255,8 +443,62 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setVessels(prev => prev.map(v => v.id === id ? { ...v, ...vesselData } : v));
   };
 
+  const addPort = (portData: Omit<Port, 'id'>) => {
+    const newPort: Port = { ...portData, id: `port-${Date.now()}` };
+    setPorts(prev => [...prev, newPort]);
+  };
+
+  const updatePort = (id: string, portData: Partial<Port>) => {
+    setPorts(prev => prev.map(p => p.id === id ? { ...p, ...portData } : p));
+  };
+
+  const deletePort = (id: string) => {
+    setPorts(prev => prev.filter(p => p.id !== id));
+  };
+
   const deleteVessel = (id: string) => {
-    setVessels(prev => prev.filter(v => v.id !== id));
+    setVessels(prev => {
+      const remaining = prev.filter(v => v.id !== id);
+      if (selectedVesselId === id) {
+        setSelectedVesselId(remaining.length > 0 ? remaining[0].id : 'all_vessels');
+      }
+      return remaining;
+    });
+  };
+
+  const transferEquipment = (equipmentId: string, toVesselId: string, notes?: string) => {
+    const eq = equipment.find(e => e.id === equipmentId);
+    if (!eq) return;
+    
+    const fromVesselId = eq.vesselId;
+    
+    const newTransfer: EquipmentTransferLog = {
+      id: `eqt-${Date.now()}`,
+      equipmentId,
+      fromVesselId,
+      toVesselId,
+      date: new Date().toISOString(),
+      transferredBy: 'Current User', // Could use activeRole here or pass it
+      notes
+    };
+
+    setEquipmentTransfers(prev => {
+      const next = [...prev, newTransfer];
+      localStorage.setItem('marineos_equipment_transfers', JSON.stringify(next));
+      return next;
+    });
+
+    setEquipment(prev => {
+      const next = prev.map(e => e.id === equipmentId ? { ...e, vesselId: toVesselId } : e);
+      localStorage.setItem('marineos_equipment', JSON.stringify(next));
+      return next;
+    });
+
+    setSpareParts(prev => {
+      const next = prev.map(p => p.equipmentId === equipmentId ? { ...p, vesselId: toVesselId } : p);
+      localStorage.setItem('marineos_spare_parts', JSON.stringify(next));
+      return next;
+    });
   };
 
   const addEquipment = (eqData: Omit<Equipment, 'id' | 'runningHours'>) => {
@@ -270,14 +512,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateEquipment = (id: string, eqData: Partial<Equipment>) => {
     setEquipment(prev => prev.map(item => item.id === id ? { ...item, ...eqData } : item));
+    
+    if (eqData.name) {
+      const newName = eqData.name;
+      setRunSessions(prev => prev.map(s => s.equipmentId === id ? { ...s, equipmentName: newName } : s));
+      setReplacementHistory(prev => prev.map(r => r.equipmentId === id ? { ...r, equipmentName: newName } : r));
+      setJobs(prev => prev.map(j => j.equipmentId === id ? { ...j, equipmentName: newName } : j));
+    }
   };
 
   const deleteEquipment = (id: string) => {
-    setEquipment(prev => prev.filter(item => item.id !== id));
+    setEquipment(prev => prev.map(item => item.id === id ? { ...item, isDeleted: true } : item));
   };
 
   const updateEquipmentRunningHours = (id: string, newHours: number) => {
-    setEquipment(prev => prev.map(eq => eq.id === id ? { ...eq, runningHours: newHours } : eq));
+    setEquipment(prev => prev.map(eq => {
+      if (eq.id === id) {
+        if (newHours < eq.runningHours) {
+          console.warn('Attempted to decrease running hours without authorization. Blocked.');
+          return eq;
+        }
+        return { ...eq, runningHours: newHours };
+      }
+      return eq;
+    }));
   };
 
   const addSparePart = (partData: Omit<SparePartItem, 'id' | 'conditionStatus'> & { conditionStatus?: ItemConditionStatus }) => {
@@ -390,11 +648,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setRunSessions(prev => prev.filter(s => s.id !== id));
   };
 
-  const addRequisition = (reqData: Omit<RequisitionOrder, 'id' | 'requisitionNo'>) => {
+  const addRequisition = (reqData: Omit<RequisitionOrder, 'id' | 'requisitionNo'> & { id?: string; requisitionNo?: string }) => {
     const newReq: RequisitionOrder = {
       ...reqData,
-      id: `req-${Date.now()}`,
-      requisitionNo: `REQ-PS-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`
+      id: reqData.id || `req-${Date.now()}`,
+      requisitionNo: reqData.requisitionNo || `REQ-PS-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`
     };
     setRequisitions(prev => [newReq, ...prev]);
   };
@@ -404,7 +662,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateRequisitionStatus = (id: string, status: RequisitionOrder['status']) => {
-    setRequisitions(prev => prev.map(r => r.id === id ? { ...r, status } : r));
+    setRequisitions(prev => prev.map(r => {
+      if (r.id === id) {
+        if (status === 'Delivered & Received') {
+          return {
+            ...r,
+            status,
+            items: r.items.map(item => ({
+              ...item,
+              status: 'Delivered & Received' as RequisitionItemStatus
+            }))
+          };
+        }
+        return { ...r, status };
+      }
+      return r;
+    }));
   };
 
   const updateRequisitionItem = (requisitionId: string, itemIndex: number, itemUpdates: Partial<RequisitionItem>) => {
@@ -412,8 +685,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (r.id === requisitionId) {
         const updatedItems = [...r.items];
         updatedItems[itemIndex] = { ...updatedItems[itemIndex], ...itemUpdates };
-        const total = updatedItems.reduce((acc, it) => acc + (it.qtyRequested * it.unitPriceUSD), 0);
-        return { ...r, items: updatedItems, totalCostUSD: total };
+        const total = updatedItems.reduce((acc, it) => it.status !== 'Denied / Rejected' ? acc + (it.qtyRequested * (it.unitPriceIDR || 0)) : acc, 0);
+        return { ...r, items: updatedItems, totalCostIDR: total };
       }
       return r;
     }));
@@ -423,8 +696,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setRequisitions(prev => prev.map(r => {
       if (r.id === requisitionId) {
         const updatedItems = r.items.filter((_, idx) => idx !== itemIndex);
-        const total = updatedItems.reduce((acc, it) => acc + (it.qtyRequested * it.unitPriceUSD), 0);
-        return { ...r, items: updatedItems, totalCostUSD: total };
+        const total = updatedItems.reduce((acc, it) => it.status !== 'Denied / Rejected' ? acc + (it.qtyRequested * (it.unitPriceIDR || 0)) : acc, 0);
+        return { ...r, items: updatedItems, totalCostIDR: total };
       }
       return r;
     }));
@@ -831,6 +1104,129 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setWorkOrders(prev => prev.filter(wo => wo.id !== id));
   };
 
+  const addVesselActivity = (actData: Omit<VesselActivityLog, 'id'>) => {
+    const newAct: VesselActivityLog = {
+      ...actData,
+      id: `act-${Date.now()}`
+    };
+    setVesselActivities(prev => [newAct, ...prev]);
+
+    // Auto-log machinery hours based on vessel state
+    equipment.forEach(eq => {
+      if (!eq.isDeleted && eq.vesselId === actData.vesselId && eq.linkedVesselStates?.includes(actData.state)) {
+        logRunSession({
+          equipmentId: eq.id,
+          equipmentName: eq.name,
+          vesselId: actData.vesselId,
+          startTime: actData.startTime,
+          stopTime: actData.endTime || new Date().toISOString(),
+          hoursCalculated: actData.durationHours,
+          loggedBy: 'SYSTEM (Auto-logged from Voyage Activity)',
+          purpose: `Auto-logged from Vessel State: ${actData.state}`
+        });
+      }
+    });
+
+    // Update vessel currentState and currentROB_MT
+    updateVessel(actData.vesselId, {
+      currentState: actData.state,
+      currentROB_MT: actData.reportedROB_MT || actData.endROB_MT
+    });
+
+      };
+
+  const deleteVesselActivity = (id: string) => {
+    setVesselActivities(prev => prev.filter(a => a.id !== id));
+  };
+
+  const addVoyagePlan = (voyData: Omit<VoyagePlan, 'id'>) => {
+    const newVoy: VoyagePlan = {
+      ...voyData,
+      id: `voy-${Date.now()}`
+    };
+    setVoyagePlans(prev => [newVoy, ...prev]);
+  };
+
+  const updateVoyagePlan = (id: string, voyData: Partial<VoyagePlan>) => {
+    setVoyagePlans(prev => prev.map(v => v.id === id ? { ...v, ...voyData } : v));
+  };
+
+  const deleteVoyagePlan = (id: string) => {
+    setVoyagePlans(prev => prev.filter(v => v.id !== id));
+  };
+
+  const updateConsumptionRates = (vesselId: string, rates: FuelConsumptionRates) => {
+    updateVessel(vesselId, { consumptionRates: rates });
+  };
+
+  const updateTankSounding = (tankId: string, soundingMeters: number, currentLevelMT: number, temperatureC?: number, soundedBy?: string) => {
+    let targetVesselId = '';
+    const updatedTanks = tanks.map(t => {
+      if (t.id === tankId) {
+        targetVesselId = t.vesselId;
+        return {
+          ...t,
+          soundingMeters,
+          currentLevelMT,
+          temperatureC: temperatureC !== undefined ? temperatureC : t.temperatureC,
+          soundedBy: soundedBy || t.soundedBy,
+          lastSoundedDate: new Date().toISOString().slice(0, 16).replace('T', ' ')
+        };
+      }
+      return t;
+    });
+
+    setTanks(updatedTanks);
+
+    if (targetVesselId) {
+      const vesselFuelTanksSum = updatedTanks
+        .filter(t => t.vesselId === targetVesselId && (t.tankType === 'HFO' || t.tankType === 'MGO' || t.tankType === 'VLSFO'))
+        .reduce((sum, t) => sum + t.currentLevelMT, 0);
+
+      updateVessel(targetVesselId, {
+        currentROB_MT: Math.round(vesselFuelTanksSum * 100) / 100
+      });
+    }
+  };
+
+  const addTank = (tankData: Omit<ShipTank, 'id'>) => {
+    const newTank: ShipTank = {
+      ...tankData,
+      id: `tank-${Date.now()}`
+    };
+    setTanks(prev => [...prev, newTank]);
+  };
+
+  const simulateRunningHours = (vesselId: string, hoursToAdd: number = 24) => {
+    // Increment vessel total running hours
+    updateVessel(vesselId, {
+      totalRunningHours: (vessels.find(v => v.id === vesselId)?.totalRunningHours || 24000) + hoursToAdd
+    });
+
+    // Increment all equipment running hours for this vessel
+    setEquipment(prev => prev.map(eq => {
+      if (eq.vesselId === vesselId) {
+        return {
+          ...eq,
+          runningHours: eq.runningHours + hoursToAdd
+        };
+      }
+      return eq;
+    }));
+  };
+
+  const addMLCRestHourLog = (logData: Omit<MLCRestHourLog, 'id'>) => {
+    const newLog: MLCRestHourLog = {
+      ...logData,
+      id: `mlc-${Date.now()}`
+    };
+    setMlcLogs(prev => [newLog, ...prev]);
+  };
+
+  const deleteMLCRestHourLog = (id: string) => {
+    setMlcLogs(prev => prev.filter(l => l.id !== id));
+  };
+
   const resetToDefaultData = () => {
     localStorage.clear();
     setVessels(initialVessels);
@@ -849,6 +1245,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setDailyLogs(initialDailyLogs);
     setDrydockProjects(initialDrydockProjects);
     setWorkOrders(initialWorkOrders);
+    setVesselActivities(initialVesselActivities);
+    setVoyagePlans(initialVoyagePlans);
+        setTanks(initialShipTanks);
+    setMlcLogs(initialMLCRestLogs);
   };
 
   return (
@@ -863,6 +1263,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       activeRole,
       setActiveRole,
       equipment,
+      equipmentTransfers,
+      transferEquipment,
       addEquipment,
       updateEquipment,
       deleteEquipment,
@@ -925,6 +1327,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updateJob,
       deleteJob,
       completeJob,
+      createRequisitionFromJob,
       executions,
       deleteJobExecution,
       dailyLogs,
@@ -938,6 +1341,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updateWorkOrder,
       updateWorkOrderStatus,
       deleteWorkOrder,
+      vesselActivities,
+      addVesselActivity,
+      deleteVesselActivity,
+      voyagePlans,
+      addVoyagePlan,
+      updateVoyagePlan,
+      deleteVoyagePlan,
+      ports,
+      addPort,
+      updatePort,
+      deletePort,
+      updateConsumptionRates,
+      tanks,
+      updateTankSounding,
+      addTank,
+      simulateRunningHours,
+      mlcLogs,
+      addMLCRestHourLog,
+      deleteMLCRestHourLog,
       resetToDefaultData,
     }}>
       {children}
